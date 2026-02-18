@@ -2,3 +2,5 @@
 
 export(bam_count)
 export(bam_read)
+importFrom(Rcpp,evalCpp)
+useDynLib(BamScale, .registration = TRUE)

@@ -4,6 +4,38 @@ suppressPackageStartupMessages({
   library(BamScale)
 })
 
+assert_bamscale_symbols <- function() {
+  required <- c("_BamScale_read_bam_cpp", "_BamScale_count_bam_cpp")
+  missing <- required[!vapply(
+    required,
+    function(sym) {
+      isTRUE(tryCatch({
+        getNativeSymbolInfo(sym, PACKAGE = "BamScale")
+        TRUE
+      }, error = function(e) FALSE))
+    },
+    logical(1)
+  )]
+
+  if (length(missing) > 0L) {
+    stop(
+      paste0(
+        "BamScale native symbols are not loaded: ", paste(missing, collapse = ", "), "\n",
+        "This usually means BamScale was not installed/loaded with compiled code.\n",
+        "Fix on server:\n",
+        "1) Restart R session\n",
+        "2) Reinstall from source: install.packages('/path/to/BamScale', repos = NULL, type = 'source')\n",
+        "3) Validate: getNativeSymbolInfo('_BamScale_read_bam_cpp', PACKAGE='BamScale')"
+      ),
+      call. = FALSE
+    )
+  }
+
+  invisible(TRUE)
+}
+
+assert_bamscale_symbols()
+
 parse_args <- function(args) {
   out <- list()
   out$.positional <- character()
