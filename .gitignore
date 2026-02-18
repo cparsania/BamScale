@@ -1,0 +1,44 @@
+# macOS / editor
+.DS_Store
+*.swp
+*.swo
+
+# R session files
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+
+# RStudio / Positron project metadata
+.Rproj.user/
+*.Rproj
+
+# Package build / check artifacts
+*.tar.gz
+*.Rcheck/
+
+# Compiled objects / shared libraries
+src/*.o
+src/*.so
+src/*.dll
+src/*.dylib
+src/*.a
+src/*.lib
+
+# Coverage / caches
+.Rcache/
+.cache/
+
+# Rendered outputs (generated)
+README.html
+README_files/
+vignettes/*.html
+vignettes/*.nb.html
+
+# Benchmark outputs
+benchmark_results/
+inst/benchmarks/benchmark_results/
+
+# Quarto local cache
+.quarto/
+**/*.quarto_ipynb

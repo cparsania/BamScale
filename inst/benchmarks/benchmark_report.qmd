@@ -1,0 +1,142 @@
+---
+title: "BamScale Server Benchmark Report"
+format:
+  html:
+    toc: true
+    number-sections: true
+params:
+  results_dir: "benchmark_results"
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## Inputs
+
+```{r}
+results_dir <- params$results_dir
+summary_path <- file.path(results_dir, "summary.csv")
+iter_path <- file.path(results_dir, "iterations.csv")
+files_path <- file.path(results_dir, "files.csv")
+config_path <- file.path(results_dir, "config.txt")
+
+stopifnot(file.exists(summary_path))
+
+summary_df <- read.csv(summary_path, stringsAsFactors = FALSE)
+iter_df <- if (file.exists(iter_path)) read.csv(iter_path, stringsAsFactors = FALSE) else data.frame()
+files_df <- if (file.exists(files_path)) read.csv(files_path, stringsAsFactors = FALSE) else data.frame()
+
+summary_ok <- subset(summary_df, status == "ok")
+```
+
+- Results directory: `r normalizePath(results_dir, winslash = "/", mustWork = FALSE)`
+- Total cases: `r nrow(summary_df)`
+- Successful: `r sum(summary_df$status == "ok")`
+- Failed: `r sum(summary_df$status != "ok")`
+
+## Configuration
+
+```{r}
+if (file.exists(config_path)) {
+  cat(paste(readLines(config_path, warn = FALSE), collapse = "\n"))
+} else {
+  cat("No config.txt found")
+}
+```
+
+## Files Used
+
+```{r}
+if (nrow(files_df) > 0) {
+  knitr::kable(files_df, digits = 3)
+} else {
+  cat("No files.csv found")
+}
+```
+
+## Summary Table
+
+```{r}
+show_cols <- c(
+  "scenario", "workload", "method", "threads_requested", "threads_effective",
+  "bp_workers", "n_files", "median_s", "records_per_s", "mb_per_s", "status"
+)
+show_cols <- intersect(show_cols, colnames(summary_df))
+knitr::kable(summary_df[order(summary_df$scenario, summary_df$workload, summary_df$median_s), show_cols, drop = FALSE], digits = 4)
+```
+
+## Single-File Scaling (BamScale)
+
+```{r}
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  df <- subset(summary_ok, scenario == "single" & method_family == "BamScale")
+  if (nrow(df) > 0) {
+    ggplot2::ggplot(df, ggplot2::aes(x = threads_effective, y = median_s, color = workload)) +
+      ggplot2::geom_line(linewidth = 0.9) +
+      ggplot2::geom_point(size = 2) +
+      ggplot2::scale_x_continuous(breaks = sort(unique(df$threads_effective))) +
+      ggplot2::labs(
+        title = "BamScale single-file thread scaling",
+        x = "Threads",
+        y = "Median elapsed (s)",
+        color = "Workload"
+      ) +
+      ggplot2::theme_minimal(base_size = 13)
+  } else {
+    cat("No successful single-file BamScale cases")
+  }
+} else {
+  cat("Install ggplot2 for plots")
+}
+```
+
+## Multi-File Scaling
+
+```{r}
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  df <- subset(summary_ok, scenario == "multi")
+  if (nrow(df) > 0) {
+    ggplot2::ggplot(df, ggplot2::aes(x = bp_workers, y = median_s, color = method)) +
+      ggplot2::geom_line(linewidth = 0.8) +
+      ggplot2::geom_point(size = 1.8) +
+      ggplot2::facet_wrap(~workload, scales = "free_y") +
+      ggplot2::scale_x_continuous(breaks = sort(unique(df$bp_workers))) +
+      ggplot2::labs(
+        title = "Multi-file scaling by workers",
+        x = "BiocParallel workers",
+        y = "Median elapsed (s)",
+        color = "Method"
+      ) +
+      ggplot2::theme_minimal(base_size = 12)
+  } else {
+    cat("No successful multi-file cases")
+  }
+} else {
+  cat("Install ggplot2 for plots")
+}
+```
+
+## Throughput View
+
+```{r}
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  df <- subset(summary_ok, !is.na(records_per_s) & records_per_s > 0)
+  if (nrow(df) > 0) {
+    ggplot2::ggplot(df, ggplot2::aes(x = total_threads, y = records_per_s, color = method_family)) +
+      ggplot2::geom_point(alpha = 0.85, size = 2) +
+      ggplot2::facet_grid(scenario ~ workload, scales = "free") +
+      ggplot2::labs(
+        title = "Throughput vs effective total threads",
+        x = "Effective total threads",
+        y = "Records per second",
+        color = "Family"
+      ) +
+      ggplot2::theme_minimal(base_size = 12)
+  } else {
+    cat("No throughput values available")
+  }
+} else {
+  cat("Install ggplot2 for plots")
+}
+```

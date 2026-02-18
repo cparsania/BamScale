@@ -1,0 +1,39 @@
+Package: BamScale
+Type: Package
+Title: Bioconductor-Friendly Multithreaded BAM Processing
+Version: 0.1.0
+Authors@R: c(
+    person("Chirag", "Patel", email = "chirag@example.com", role = c("aut", "cre"))
+  )
+Description: Multithreaded sequential BAM processing built on top of the
+    ompBAM C++ engine. BamScale provides user-friendly BAM read and scan
+    interfaces designed for compatibility with existing Bioconductor workflows.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: false
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    methods,
+    Rcpp
+LinkingTo:
+    Rcpp,
+    ompBAM
+Suggests:
+    BiocParallel,
+    chipseqDBData,
+    ExperimentHub,
+    GenomicAlignments,
+    GenomicRanges,
+    GenomeInfoDb,
+    ggplot2,
+    IRanges,
+    knitr,
+    rmarkdown,
+    Rsamtools,
+    S4Vectors,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+SystemRequirements: C++17, OpenMP
+NeedsCompilation: yes
