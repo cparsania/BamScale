@@ -1,114 +1,171 @@
 # BamScale
 
-BamScale is a multithreaded BAM reader/scanner for R built on top of `ompBAM`, with an argument surface designed to feel familiar to Bioconductor users.
+[![R-CMD-check](https://github.com/chiragp/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/chiragp/BamScale/actions/workflows/R-CMD-check.yaml)
+[![Benchmark Report](https://github.com/chiragp/BamScale/actions/workflows/render-benchmark-vignette.yml/badge.svg)](https://github.com/chiragp/BamScale/actions/workflows/render-benchmark-vignette.yml)
+[![codecov](https://codecov.io/gh/chiragp/BamScale/branch/main/graph/badge.svg)](https://app.codecov.io/gh/chiragp/BamScale)
+[![Bioconductor build](https://bioconductor.org/shields/build/release/bioc/BamScale.svg)](https://bioconductor.org/checkResults/release/bioc-LATEST/BamScale/)
+[![Bioconductor downloads](https://bioconductor.org/shields/downloads/release/BamScale.svg)](https://bioconductor.org/packages/BamScale/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Goals
 
-- Faster sequential BAM read/scan throughput via OpenMP.
-- Argument compatibility with common Bioc patterns (`file`, `param`, `what`, `tag`, `BPPARAM`).
-- Explicit nested parallelism control via `threads`, `BPPARAM`, and `auto_threads`.
-- Output compatibility for downstream pipelines (`data.frame`, `S4Vectors::DataFrame`, `GenomicAlignments::GAlignments`, `GenomicAlignments::GAlignmentPairs`, scan-like list output).
+BamScale is a Bioconductor-friendly, multithreaded BAM processing package for R built on top of the `ompBAM` C++ engine.
+
+It is designed for users who want `scanBam`/`readGAlignments`-style ergonomics with explicit control of modern CPU parallelism.
+
+## Why BamScale?
+
+BAM analysis pipelines in R often face two practical constraints:
+
+-   high per-file latency for large BAMs when using single-thread readers,
+-   workflow friction when switching between fast low-level tools and Bioconductor-native data structures.
+
+BamScale addresses both by combining:
+
+-   an OpenMP-enabled C++ backend (`ompBAM`),
+-   a Bioconductor-compatible R interface (`file`, `param`, `what`, `tag`, `BPPARAM`),
+-   direct output modes for downstream ecosystem interoperability.
+
+## ompBAM vs BamScale
+
+`ompBAM` and BamScale are complementary layers.
+
+-   `ompBAM` provides the high-performance C++ BAM decode/scan core.
+-   BamScale provides the user-facing R contract for Bioconductor workflows.
+
+### What ompBAM already solves
+
+-   fast sequential BAM parsing and decompression in C++,
+-   thread-level parallelism via OpenMP,
+-   low-level access to alignment fields.
+
+### What BamScale adds
+
+-   Bioconductor-style API:
+    -   `bam_read()` for read extraction,
+    -   `bam_count()` for chromosome-level counting,
+-   compatibility with `ScanBamParam` semantics (`mapqFilter`, `flag`, `which`, `what`, `tag`),
+-   output modes tailored to R users:
+    -   `data.frame`, `S4Vectors::DataFrame`,
+    -   `GenomicAlignments::GAlignments`, `GenomicAlignments::GAlignmentPairs`,
+    -   scan-like `list` output (`as = "scanBam"`),
+-   nested parallelism control (`threads`, `BPPARAM`, `auto_threads`) with cpuset-aware thread capping,
+-   reproducible benchmark framework with strict `fair` vs `optimized` tracks.
 
 ## Main Functions
 
-- `bam_read()`
-  - Supports `character`, `BamFile`, `BamFileList` inputs.
-  - Honors key `ScanBamParam` fields: `mapqFilter`, `flag`, `which`, `what`, `tag`.
-  - Supports `as = "DataFrame" | "data.frame" | "GAlignments" | "GAlignmentPairs" | "scanBam"`.
+-   `bam_read()`
+    -   Inputs: `character`, `Rsamtools::BamFile`, `Rsamtools::BamFileList`
+    -   Supported fields: `qname`, `flag`, `rname`, `strand`, `pos`, `qwidth`, `mapq`, `cigar`, `mrnm`, `mpos`, `isize`, `seq`, `qual`
+    -   Output modes: `"DataFrame"`, `"data.frame"`, `"GAlignments"`, `"GAlignmentPairs"`, `"scanBam"`
+    -   `seqqual_mode`:
+        -   `"compatible"` (default): character seq/qual for Bioconductor compatibility
+        -   `"compact"`: raw list-columns for high-throughput seq/qual extraction
+-   `bam_count()`
+    -   fast chromosome-level counts with the same filtering semantics (`mapqFilter`, `flag`, `which`)
 
-- `bam_count()`
-  - Fast chromosome-level counts with same `param` filtering semantics.
+## Installation
 
-## Usage
+BamScale requires:
 
-```r
+-   R with C++17 toolchain,
+-   OpenMP-capable compiler/runtime,
+-   `ompBAM` installed and discoverable by R.
+
+Install from source (inside this repository):
+
+``` bash
+R CMD INSTALL .
+```
+
+## Quick Start
+
+``` r
 library(BamScale)
 
 bam <- ompBAM::example_BAM("Unsorted")
 
-# scanBam/readGAlignments-like usage
+# 1) Bioconductor-familiar extraction
 x <- bam_read(
   file = bam,
   what = c("qname", "flag", "rname", "pos", "mapq", "cigar"),
   threads = 4
 )
 
-# Tag extraction
-x_tag <- bam_read(
+# 2) Seq/qual extraction (default compatible mode)
+sq <- bam_read(
   file = bam,
-  what = c("qname", "rname", "pos"),
-  tag = c("NH", "NM"),
+  what = c("qname", "seq", "qual"),
+  as = "data.frame",
+  seqqual_mode = "compatible",
   threads = 4
 )
 
-# scanBam()-shaped list output
-x_scan <- bam_read(
+# 3) High-throughput compact seq/qual path
+sq_compact <- bam_read(
   file = bam,
-  what = c("qname", "flag", "rname", "pos"),
+  what = c("qname", "seq", "qual"),
+  as = "data.frame",
+  seqqual_mode = "compact",
+  threads = 4
+)
+
+# 4) scanBam-shaped output
+scan_like <- bam_read(
+  file = bam,
+  what = c("qname", "flag"),
   tag = c("NM"),
   as = "scanBam",
   threads = 4
 )
 
-# Strict scanBam() range batching (one element per range label, including empty ranges)
-x_scan_ranges <- bam_read(
-  file = bam,
-  param = list(
-    which = data.frame(
-      seqname = c("1", "1"),
-      start = c(1L, 250000000L),
-      end = c(100000L, 250010000L),
-      label = c("region_hit", "region_empty")
-    )
-  ),
-  what = c("qname", "flag"),
-  as = "scanBam",
-  threads = 4
-)
-
-# Paired-end output (when mates are available)
-x_pairs <- bam_read(
-  file = bam,
-  what = c("qname", "flag", "rname", "pos", "cigar", "strand"),
-  as = "GAlignmentPairs",
-  include_unmapped = FALSE,
-  threads = 4
-)
-
-# Count summary
+# 5) Fast count summary
 counts <- bam_count(file = bam, threads = 4)
 ```
 
-## Parallelism (`threads` vs `BPPARAM`)
+## Parallelism Model
 
-- `BPPARAM` parallelizes across BAM files.
-- `threads` parallelizes within each BAM file through OpenMP.
-- Approximate total concurrency is
-  `min(length(file), BiocParallel::bpnworkers(BPPARAM)) * threads`.
-- With `auto_threads = TRUE`, per-file OpenMP threads are automatically capped to
-  `max(1, min(threads, floor(available_cores / workers_eff)))`, where
-  `workers_eff = min(length(file), BiocParallel::bpnworkers(BPPARAM))`.
+BamScale supports two parallel axes:
 
-```r
-# Multi-file run with automatic nested parallelism balancing
-if (requireNamespace("BiocParallel", quietly = TRUE)) {
-  files <- c(sample1 = bam, sample2 = bam)
-  bp <- BiocParallel::SerialParam()
+-   across files: `BPPARAM` workers,
+-   within file: OpenMP `threads`.
 
-  out <- bam_read(
-    file = files,
-    what = c("qname", "flag", "rname", "pos"),
-    threads = 8,
-    BPPARAM = bp,
-    auto_threads = TRUE
-  )
-}
-```
+Approximate total concurrency:
 
-## Notes
+`min(length(file), BiocParallel::bpnworkers(BPPARAM)) * threads`
 
-- Region filtering via `param$which` is supported as a sequential filter (not random index jumps).
-- For `as = "GAlignments"` and `as = "GAlignmentPairs"`, unmapped records are dropped.
-- `as = "scanBam"` mirrors `scanBam()` list shape: no `which` gives one unnamed batch; `which` gives one named batch per range label, including empty ranges.
-- In `as = "scanBam"` mode, `seq` and `qual` are returned as `DNAStringSet` and `PhredQuality` when Biostrings is available.
-- Multi-file inputs return a named list; optionally parallelized with `BPPARAM`.
+If `auto_threads = TRUE`, per-file OpenMP threads are capped to reduce oversubscription under multi-worker runs.
+
+## Benchmarking and Reproducibility
+
+Benchmark assets live under `inst/benchmarks/`.
+
+-   Runner: `inst/benchmarks/run_server_benchmark.R`
+-   Report: `inst/benchmarks/benchmark_report.qmd`
+-   Protocol: `inst/benchmarks/README.md`
+
+The benchmark framework separates:
+
+-   `fair` track: strict BamScale vs comparator comparison (`Rsamtools`, `GenomicAlignments`),
+-   `optimized` track: BamScale-only optimized configurations (for example compact `seq/qual`).
+
+This prevents mixing optimization-only paths into cross-package claims.
+
+## Current Limitations (Transparent)
+
+-   `param$which` is implemented as sequential filtering, not indexed random-access jumps.
+-   `seqqual_mode = "compact"` is currently supported for `as = "data.frame"` and `as = "DataFrame"`.
+-   `GAlignments` / `GAlignmentPairs` outputs drop unmapped records by design.
+-   Multi-file performance does not necessarily improve monotonically with more workers.
+    -   At fixed total thread budget, higher worker counts can lose to lower worker counts because of process overhead, serialization, memory pressure, and storage contention.
+-   Observed speedups are workload-, storage-, and hardware-dependent.
+
+## What Has Been Improved Recently
+
+-   Added compact seq/qual extraction path for lower-overhead high-throughput runs.
+-   Optimized core C++ hot paths (decode/merge/allocation behavior).
+-   Added cpuset-aware core detection for more reliable thread budgeting in container/HPC environments.
+-   Redesigned benchmark workflow/report to make `fair` vs `optimized` interpretation explicit.
+
+## License
+
+MIT (`LICENSE`).

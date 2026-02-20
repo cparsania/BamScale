@@ -1,0 +1,22 @@
+meta <- utils::packageDescription("BamScale")
+year <- sub("-.*$", "", meta[["Date"]])
+if (is.na(year) || !nzchar(year)) year <- format(Sys.Date(), "%Y")
+
+citHeader("To cite BamScale in publications, use:")
+
+citEntry(
+  entry = "Manual",
+  title = meta[["Title"]],
+  author = personList(
+    person(given = "Chirag", family = "Patel")
+  ),
+  year = year,
+  note = paste("R package version", meta[["Version"]]),
+  textVersion = paste0(
+    "Patel C (", year, "). ",
+    meta[["Package"]], ": ", meta[["Title"]], ". ",
+    "R package version ", meta[["Version"]], "."
+  )
+)
+
+citFooter("If BamScale contributes to performance claims, please also cite ompBAM.")
