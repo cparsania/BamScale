@@ -5,7 +5,7 @@ Version: 0.1.0
 Authors@R: c(
     person("Chirag", "Parsania", email = "chirag.parsania@gmail.com", role = c("aut", "cre"))
   )
-Author: Chirag Patel [aut, cre]
+Author: Chirag Parsania [aut, cre]
 Maintainer: Chirag Parsania <chirag.parsania@gmail.com>
 Description: Multithreaded sequential BAM processing built on top of the
     ompBAM C++ engine. BamScale provides user-friendly BAM read and scan
