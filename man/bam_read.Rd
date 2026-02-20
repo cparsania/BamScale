@@ -10,6 +10,7 @@ bam_read(
   what = NULL,
   tag = NULL,
   as = c("DataFrame", "data.frame", "GAlignments", "GAlignmentPairs", "scanBam"),
+  seqqual_mode = c("compatible", "compact"),
   threads = 1L,
   BPPARAM = NULL,
   auto_threads = FALSE,
@@ -44,6 +45,16 @@ lightweight use). The following fields are honored:
 \item \code{"GAlignments"}: returns \code{GenomicAlignments::GAlignments},
 \item \code{"GAlignmentPairs"}: returns \code{GenomicAlignments::GAlignmentPairs},
 \item \code{"scanBam"}: returns a \code{scanBam()}-shaped list-of-lists.
+}}
+
+\item{seqqual_mode}{Controls representation of \code{seq}/\code{qual} when those
+fields are requested:
+\itemize{
+\item \code{"compatible"} (default): return character vectors matching
+\code{scanBam}-style expectations,
+\item \code{"compact"}: return raw list-columns for faster/lower-overhead
+extraction. This mode is currently supported for
+\code{as = "data.frame"} or \code{as = "DataFrame"}.
 }}
 
 \item{threads}{Requested number of OpenMP threads used for
@@ -101,6 +112,8 @@ Compatibility notes:
 requirements into required-set and required-unset bit masks.
 \item Tag values are returned as character columns. Scalar tags are scalar
 strings; \code{B} tags are comma-separated vectors.
+\item \code{seqqual_mode = "compact"} is optimized for throughput-oriented
+benchmarking and returns raw list-columns for \code{seq}/\code{qual}.
 \item \code{"GAlignments"} and \code{"GAlignmentPairs"} output exclude unmapped records.
 \item \code{as = "scanBam"} returns a strict scan-like list-of-lists:
 without \code{param$which}, it returns one unnamed batch; with \code{param$which},

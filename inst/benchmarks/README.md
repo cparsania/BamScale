@@ -1,63 +1,86 @@
-# BamScale Server Benchmark Workflow
+# BamScale Server Benchmark Workflow (budget-aware)
 
-This folder contains a server-first benchmark workflow for BamScale.
+This folder contains a server-first benchmark workflow for BamScale with configurable compute budget and profiles.
 
-## Prerequisites
+## Benchmark tracks
 
-- `BamScale` must be installed and loadable on the server (`library(BamScale)`).
-- Optional comparator packages: `Rsamtools`, `GenomicAlignments`, `BiocParallel`.
-- Optional report/plots: `quarto`, `knitr`, `ggplot2`.
+- `fair`: comparator-safe runs used for BamScale vs Rsamtools/GenomicAlignments comparisons.
+- `optimized`: BamScale-only optimization runs (currently compact `seq/qual` mode).
 
-## 1) Run Benchmarks (recommended)
+Report sections that claim cross-package comparison use only the `fair` track.
 
-Use the plain R script for execution on server/HPC nodes.
+## Profiles
+
+- `bamscale_showcase` (default): step1-focused, designed to highlight BamScale strengths.
+- `balanced`: includes broader workloads for mixed/fair comparison.
+- `full`: widest workload/grid coverage.
+
+## Budget model
+
+- `--budget-threads`: target total compute budget (default: `min(48, detected_cores)`).
+- `--max-threads`: effective per-run thread ceiling (defaults to `--budget-threads`).
+- `--seqqual-compact=true|false`: include BamScale compact `seq/qual` runs (default: `TRUE` for `balanced/full`, `FALSE` for `bamscale_showcase`).
+- Multi-file BamScale uses balanced split:
+  - `threads_each = floor(max_threads / workers)`
+  - approx total threads: `workers * threads_each`.
+
+## 1) Run benchmark on server (recommended)
+
+Example (showcase profile, favorable to BamScale):
 
 ```bash
 Rscript inst/benchmarks/run_server_benchmark.R \
+  --profile=bamscale_showcase \
+  --budget-threads=48 \
+  --max-threads=48 \
   --bam-dir=/path/to/bam_directory \
-  --n-files=24 \
-  --threads=1,2,4,8,12,18,24,36,48,72 \
-  --workers=1,2,4,6,8,12,18,24,36,72 \
-  --max-threads=72 \
+  --n-files=12 \
+  --bp-backend=snow \
   --iterations=3 \
-  --multi-workloads=step1,seqqual,galignments \
   --outdir=/path/to/benchmark_results
 ```
 
-Key options:
+Example (balanced profile):
 
-- `--bam-dir`: directory of BAM files (recursive by default)
-- `--bam-files`: comma-separated explicit BAM paths
-- `--bam-file-list`: text file with one BAM path per line
-- `--threads`: single-file thread grid
-- `--workers`: multi-file worker grid
-- `--max-threads`: requested ceiling (for `auto_threads` and balanced runs)
-- `--n-files`: number of files used for multi-file tests
-- `--multi-workloads`: any of `step1`, `seqqual`, `galignments`
-- `--ensure-index=true|false`: create `.bai` when missing for comparator methods
-- `--allow-repeat-files=true|false`: allow repeated files when fewer than `n-files`
+```bash
+Rscript inst/benchmarks/run_server_benchmark.R \
+  --profile=balanced \
+  --budget-threads=48 \
+  --max-threads=48 \
+  --bam-dir=/path/to/bam_directory \
+  --n-files=12 \
+  --bp-backend=snow \
+  --iterations=3 \
+  --outdir=/path/to/benchmark_results
+```
 
-If no BAM input is provided, the script tries `chipseqDBData::H3K9acData()`.
+If no BAM input is provided, the script resolves BAMs from `chipseqDBData::H3K9acData()`.
 
-Outputs are written to a timestamped run directory:
-
-- `summary.csv`
-- `iterations.csv`
-- `files.csv`
-- `config.txt`
-- `sessionInfo.txt`
-- plot PNGs (if `ggplot2` is installed)
-
-## 2) Render Optional Report (Quarto)
-
-Use Quarto only for reporting from already-generated CSV outputs.
+## 2) Render report
 
 ```bash
 quarto render inst/benchmarks/benchmark_report.qmd \
   -P results_dir:/path/to/benchmark_results/run_YYYYMMDD_HHMMSS
 ```
 
-## Recommendation
+## Main outputs
 
-- **Execution**: plain `Rscript` (robust, scheduler-friendly, easier retries/logging).
-- **Presentation**: Quarto report generated after execution from saved CSV results.
+- `summary.csv`: per-case summary statistics
+- `iterations.csv`: per-iteration elapsed times
+- `files.csv`: selected BAM files and sizes
+- `config.txt`: parsed and effective config
+- `sessionInfo.txt`: reproducibility snapshot
+- `plot_single_scaling.png`, `plot_multi_scaling.png` (if `ggplot2` installed)
+
+## Useful options
+
+- `--profile=bamscale_showcase|balanced|full`
+- `--budget-threads=<int>`
+- `--max-threads=<int>`
+- `--threads=...` (override single-file grid)
+- `--workers=...` (override multi-file worker grid)
+- `--multi-workloads=step1,seqqual,galignments`
+- `--seqqual-compact=true|false`
+- `--include-rsamtools=true|false`
+- `--include-galignments=true|false`
+- `--ensure-index=true|false`

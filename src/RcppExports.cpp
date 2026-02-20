@@ -11,8 +11,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // read_bam_cpp
-List read_bam_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const bool include_unmapped, const bool include_seq, const bool include_qual, const int flag_require_set, const int flag_require_unset, const CharacterVector& tag_names_r, const CharacterVector& which_seqnames, const IntegerVector& which_starts, const IntegerVector& which_ends, const CharacterVector& which_labels, const bool with_which_label, const int field_mask);
-RcppExport SEXP _BamScale_read_bam_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP include_unmappedSEXP, SEXP include_seqSEXP, SEXP include_qualSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP, SEXP tag_names_rSEXP, SEXP which_seqnamesSEXP, SEXP which_startsSEXP, SEXP which_endsSEXP, SEXP which_labelsSEXP, SEXP with_which_labelSEXP, SEXP field_maskSEXP) {
+List read_bam_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const bool include_unmapped, const bool include_seq, const bool include_qual, const bool compact_seqqual, const int flag_require_set, const int flag_require_unset, const CharacterVector& tag_names_r, const CharacterVector& which_seqnames, const IntegerVector& which_starts, const IntegerVector& which_ends, const CharacterVector& which_labels, const bool with_which_label, const int field_mask);
+RcppExport SEXP _BamScale_read_bam_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP include_unmappedSEXP, SEXP include_seqSEXP, SEXP include_qualSEXP, SEXP compact_seqqualSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP, SEXP tag_names_rSEXP, SEXP which_seqnamesSEXP, SEXP which_startsSEXP, SEXP which_endsSEXP, SEXP which_labelsSEXP, SEXP with_which_labelSEXP, SEXP field_maskSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -22,6 +22,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const bool >::type include_unmapped(include_unmappedSEXP);
     Rcpp::traits::input_parameter< const bool >::type include_seq(include_seqSEXP);
     Rcpp::traits::input_parameter< const bool >::type include_qual(include_qualSEXP);
+    Rcpp::traits::input_parameter< const bool >::type compact_seqqual(compact_seqqualSEXP);
     Rcpp::traits::input_parameter< const int >::type flag_require_set(flag_require_setSEXP);
     Rcpp::traits::input_parameter< const int >::type flag_require_unset(flag_require_unsetSEXP);
     Rcpp::traits::input_parameter< const CharacterVector& >::type tag_names_r(tag_names_rSEXP);
@@ -31,7 +32,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< const CharacterVector& >::type which_labels(which_labelsSEXP);
     Rcpp::traits::input_parameter< const bool >::type with_which_label(with_which_labelSEXP);
     Rcpp::traits::input_parameter< const int >::type field_mask(field_maskSEXP);
-    rcpp_result_gen = Rcpp::wrap(read_bam_cpp(bam_file, n_threads, min_mapq, include_unmapped, include_seq, include_qual, flag_require_set, flag_require_unset, tag_names_r, which_seqnames, which_starts, which_ends, which_labels, with_which_label, field_mask));
+    rcpp_result_gen = Rcpp::wrap(read_bam_cpp(bam_file, n_threads, min_mapq, include_unmapped, include_seq, include_qual, compact_seqqual, flag_require_set, flag_require_unset, tag_names_r, which_seqnames, which_starts, which_ends, which_labels, with_which_label, field_mask));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -56,7 +57,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_BamScale_read_bam_cpp", (DL_FUNC) &_BamScale_read_bam_cpp, 15},
+    {"_BamScale_read_bam_cpp", (DL_FUNC) &_BamScale_read_bam_cpp, 16},
     {"_BamScale_count_bam_cpp", (DL_FUNC) &_BamScale_count_bam_cpp, 9},
     {NULL, NULL, 0}
 };

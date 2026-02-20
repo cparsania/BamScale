@@ -47,6 +47,13 @@
 #' - `"GAlignments"`: returns `GenomicAlignments::GAlignments`,
 #' - `"GAlignmentPairs"`: returns `GenomicAlignments::GAlignmentPairs`,
 #' - `"scanBam"`: returns a `scanBam()`-shaped list-of-lists.
+#' @param seqqual_mode Controls representation of `seq`/`qual` when those
+#'   fields are requested:
+#' - `"compatible"` (default): return character vectors matching
+#'   `scanBam`-style expectations,
+#' - `"compact"`: return raw list-columns for faster/lower-overhead
+#'   extraction. This mode is currently supported for
+#'   `as = "data.frame"` or `as = "DataFrame"`.
 #' @param threads Requested number of OpenMP threads used for
 #'   reading/decompression. May be capped when `auto_threads = TRUE`.
 #' @param BPPARAM Optional `BiocParallel` parameter used when `file` contains
@@ -88,6 +95,8 @@
 #'   requirements into required-set and required-unset bit masks.
 #' - Tag values are returned as character columns. Scalar tags are scalar
 #'   strings; `B` tags are comma-separated vectors.
+#' - `seqqual_mode = "compact"` is optimized for throughput-oriented
+#'   benchmarking and returns raw list-columns for `seq`/`qual`.
 #' - `"GAlignments"` and `"GAlignmentPairs"` output exclude unmapped records.
 #' - `as = "scanBam"` returns a strict scan-like list-of-lists:
 #'   without `param$which`, it returns one unnamed batch; with `param$which`,
@@ -116,6 +125,7 @@ bam_read <- function(
     what = NULL,
     tag = NULL,
     as = c("DataFrame", "data.frame", "GAlignments", "GAlignmentPairs", "scanBam"),
+    seqqual_mode = c("compatible", "compact"),
     threads = 1L,
     BPPARAM = NULL,
     auto_threads = FALSE,
@@ -124,6 +134,7 @@ bam_read <- function(
     include_unmapped = TRUE
 ) {
     as <- match.arg(as)
+    seqqual_mode <- match.arg(seqqual_mode)
 
     files <- .bamscale_normalize_files(file)
     threads <- .bamscale_resolve_threads(
@@ -172,6 +183,16 @@ bam_read <- function(
 
     include_seq <- "seq" %in% needed_fields
     include_qual <- "qual" %in% needed_fields
+    compact_seqqual <- identical(seqqual_mode, "compact") && (include_seq || include_qual)
+
+    if (isTRUE(compact_seqqual) && !as %in% c("data.frame", "DataFrame")) {
+        warning(
+            "`seqqual_mode='compact'` is currently supported only for `as='data.frame'` ",
+            "or `as='DataFrame'`; falling back to `seqqual_mode='compatible'`."
+        )
+        compact_seqqual <- FALSE
+    }
+
     field_mask <- .bamscale_make_field_mask(needed_fields)
 
     worker <- function(path_one) {
@@ -183,6 +204,7 @@ bam_read <- function(
             as.logical(include_unmapped),
             as.logical(include_seq),
             as.logical(include_qual),
+            as.logical(compact_seqqual),
             as.integer(parsed$flag_set),
             as.integer(parsed$flag_unset),
             as.character(tag_final),
@@ -295,7 +317,45 @@ bam_count <- function(
 }
 
 
+.bamscale_parse_cpu_list <- function(x) {
+    if (is.null(x) || !nzchar(x)) return(NA_integer_)
+
+    parts <- strsplit(gsub("\\s+", "", x), ",", fixed = TRUE)[[1L]]
+    total <- 0L
+
+    for (p in parts) {
+        if (!nzchar(p)) next
+
+        if (grepl("-", p, fixed = TRUE)) {
+            bounds <- strsplit(p, "-", fixed = TRUE)[[1L]]
+            if (length(bounds) == 2L) {
+                lo <- suppressWarnings(as.integer(bounds[[1L]]))
+                hi <- suppressWarnings(as.integer(bounds[[2L]]))
+                if (!is.na(lo) && !is.na(hi) && hi >= lo) {
+                    total <- total + (hi - lo + 1L)
+                }
+            }
+        } else {
+            v <- suppressWarnings(as.integer(p))
+            if (!is.na(v)) total <- total + 1L
+        }
+    }
+
+    if (total > 0L) total else NA_integer_
+}
+
 .bamscale_detect_cores <- function() {
+    # Honor Linux cpuset limits when available (containers, schedulers).
+    if (.Platform$OS.type == "unix" && file.exists("/proc/self/status")) {
+        status <- tryCatch(readLines("/proc/self/status", warn = FALSE), error = function(e) character())
+        hit <- grep("^Cpus_allowed_list\\s*:", status, value = TRUE)
+        if (length(hit) > 0L) {
+            allowed <- sub("^Cpus_allowed_list\\s*:\\s*", "", hit[[1L]])
+            n_allowed <- .bamscale_parse_cpu_list(allowed)
+            if (!is.na(n_allowed) && n_allowed >= 1L) return(as.integer(n_allowed))
+        }
+    }
+
     physical <- suppressWarnings(as.integer(parallel::detectCores(logical = FALSE)))
     if (length(physical) == 1L && !is.na(physical) && physical >= 1L) {
         return(physical)
@@ -304,6 +364,11 @@ bam_count <- function(
     logical_cores <- suppressWarnings(as.integer(parallel::detectCores(logical = TRUE)))
     if (length(logical_cores) == 1L && !is.na(logical_cores) && logical_cores >= 1L) {
         return(logical_cores)
+    }
+
+    slurm <- suppressWarnings(as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", unset = "")))
+    if (length(slurm) == 1L && !is.na(slurm) && slurm >= 1L) {
+        return(slurm)
     }
 
     1L
@@ -804,9 +869,17 @@ bam_count <- function(
     }
 
     extra_cols <- x[, setdiff(names(x), c("rname", "pos", "cigar", "strand")), drop = FALSE]
+
+    header_seqnames <- attr(raw_df, "seqnames_header")
+    if (!is.null(header_seqnames)) {
+        seq_factor <- factor(x$rname, levels = as.character(header_seqnames))
+    } else {
+        seq_factor <- factor(x$rname)
+    }
+
     ga_args <- c(
         list(
-            seqnames = S4Vectors::Rle(factor(x$rname)),
+            seqnames = S4Vectors::Rle(seq_factor),
             pos = as.integer(x$pos),
             cigar = as.character(x$cigar),
             strand = as.character(x$strand),
@@ -877,21 +950,36 @@ bam_count <- function(
     split_second <- split(idx_second, qname[idx_second])
     keys <- intersect(names(split_first), names(split_second))
 
-    p1 <- integer()
-    p2 <- integer()
-    pair_names <- character()
+    n_keys <- length(keys)
+    p1_parts <- vector("list", n_keys)
+    p2_parts <- vector("list", n_keys)
+    name_parts <- vector("list", n_keys)
     dropped <- 0L
 
-    for (k in keys) {
-        f <- split_first[[k]]
-        s <- split_second[[k]]
-        n <- min(length(f), length(s))
-        if (n > 0L) {
-            p1 <- c(p1, f[seq_len(n)])
-            p2 <- c(p2, s[seq_len(n)])
-            pair_names <- c(pair_names, rep(k, n))
+    if (n_keys > 0L) {
+        for (i in seq_along(keys)) {
+            k <- keys[[i]]
+            f <- split_first[[k]]
+            s <- split_second[[k]]
+            n <- min(length(f), length(s))
+
+            if (n > 0L) {
+                p1_parts[[i]] <- f[seq_len(n)]
+                p2_parts[[i]] <- s[seq_len(n)]
+                name_parts[[i]] <- rep(k, n)
+            }
+
+            dropped <- dropped + abs(length(f) - length(s))
         }
-        dropped <- dropped + abs(length(f) - length(s))
+
+        keep <- vapply(p1_parts, length, integer(1)) > 0L
+        p1 <- unlist(p1_parts[keep], use.names = FALSE)
+        p2 <- unlist(p2_parts[keep], use.names = FALSE)
+        pair_names <- unlist(name_parts[keep], use.names = FALSE)
+    } else {
+        p1 <- integer()
+        p2 <- integer()
+        pair_names <- character()
     }
 
     if (length(p1) == 0L) {
