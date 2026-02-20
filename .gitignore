@@ -42,3 +42,18 @@ inst/benchmarks/benchmark_results/
 # Quarto local cache
 .quarto/
 **/*.quarto_ipynb
+
+/.quarto/
+
+# Configure-generated files
+src/Makevars
+src/symbols.rds
+
+# Local check dirs
+..Rcheck/
+
+# Vignette intermediate artifacts
+vignettes/benchmarking.rmarkdown
+vignettes/benchmarking_files/
+vignettes/.quarto/
+docs

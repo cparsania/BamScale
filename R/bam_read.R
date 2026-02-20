@@ -669,7 +669,7 @@ bam_count <- function(
     }
 
     if (methods::is(which_obj, "IntegerRangesList")) {
-        unlisted <- IRanges::unlist(which_obj, use.names = FALSE)
+        unlisted <- BiocGenerics::unlist(which_obj, use.names = FALSE)
         seqname <- rep(names(which_obj), times = as.integer(IRanges::elementNROWS(which_obj)))
         start <- as.integer(IRanges::start(unlisted))
         end <- as.integer(IRanges::end(unlisted))
@@ -787,7 +787,7 @@ bam_count <- function(
         }
 
         if (length(tags) > 0L) {
-            tag_list <- setNames(vector("list", length(tags)), tags)
+            tag_list <- stats::setNames(vector("list", length(tags)), tags)
             for (tg in tags) {
                 if (tg %in% names(df)) {
                     tag_list[[tg]] <- df[[tg]][idx]

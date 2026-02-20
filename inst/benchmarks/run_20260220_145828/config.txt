@@ -1,0 +1,34 @@
+# Parsed options
+.positional: 
+profile: balanced
+budget-threads: 48
+max-threads: 48
+seqqual-compact: true
+bam-dir: /path/to/bams
+n-files: 12
+bp-backend: snow
+iterations: 3
+outdir: benchmark_results
+
+# Effective configuration
+outdir: benchmark_results
+profile: balanced
+detected_cores: 96
+budget_threads: 48
+n_files: 12
+iterations: 3
+warmup: TRUE
+max_threads: 48
+threads: 1,2,4,8,12,16,24,32,48
+workers: 1,2,4,8,12
+bp_backend: snow
+include_seqqual: TRUE
+seqqual_compact: TRUE
+include_galignments: TRUE
+include_multi: TRUE
+include_rsamtools: TRUE
+ensure_index: TRUE
+allow_repeat_files: TRUE
+recursive: TRUE
+multi_workloads: step1,seqqual
+compute_records: TRUE

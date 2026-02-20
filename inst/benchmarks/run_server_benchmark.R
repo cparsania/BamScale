@@ -4,6 +4,51 @@ suppressPackageStartupMessages({
   library(BamScale)
 })
 
+
+.bamscale_parse_cpu_list <- function(x) {
+  if (is.null(x) || !nzchar(x)) return(NA_integer_)
+  parts <- strsplit(gsub("\\s+", "", x), ",", fixed = TRUE)[[1L]]
+  total <- 0L
+  for (p in parts) {
+    if (!nzchar(p)) next
+    if (grepl("-", p, fixed = TRUE)) {
+      ends <- strsplit(p, "-", fixed = TRUE)[[1L]]
+      if (length(ends) == 2L) {
+        lo <- suppressWarnings(as.integer(ends[[1L]]))
+        hi <- suppressWarnings(as.integer(ends[[2L]]))
+        if (!is.na(lo) && !is.na(hi) && hi >= lo) total <- total + (hi - lo + 1L)
+      }
+    } else {
+      v <- suppressWarnings(as.integer(p))
+      if (!is.na(v)) total <- total + 1L
+    }
+  }
+  if (total > 0L) total else NA_integer_
+}
+
+.bamscale_detect_cores <- function() {
+  if (.Platform$OS.type == "unix" && file.exists("/proc/self/status")) {
+    s <- tryCatch(readLines("/proc/self/status", warn = FALSE), error = function(e) character())
+    hit <- grep("^Cpus_allowed_list\\s*:", s, value = TRUE)
+    if (length(hit) > 0L) {
+      allowed <- sub("^Cpus_allowed_list\\s*:\\s*", "", hit[[1L]])
+      n_allowed <- .bamscale_parse_cpu_list(allowed)
+      if (!is.na(n_allowed) && n_allowed >= 1L) return(as.integer(n_allowed))
+    }
+  }
+
+  n <- tryCatch(parallel::detectCores(logical = TRUE), error = function(e) NA_integer_)
+  n <- suppressWarnings(as.integer(n))
+  if (!is.na(n) && n >= 1L) return(n)
+
+  slurm <- suppressWarnings(as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", unset = "")))
+  if (!is.na(slurm) && slurm >= 1L) return(slurm)
+
+  1L
+}
+
+
+
 assert_bamscale_symbols <- function() {
   required <- c("_BamScale_read_bam_cpp", "_BamScale_count_bam_cpp")
   missing <- required[!vapply(
@@ -21,11 +66,7 @@ assert_bamscale_symbols <- function() {
     stop(
       paste0(
         "BamScale native symbols are not loaded: ", paste(missing, collapse = ", "), "\n",
-        "This usually means BamScale was not installed/loaded with compiled code.\n",
-        "Fix on server:\n",
-        "1) Restart R session\n",
-        "2) Reinstall from source: install.packages('/path/to/BamScale', repos = NULL, type = 'source')\n",
-        "3) Validate: getNativeSymbolInfo('_BamScale_read_bam_cpp', PACKAGE='BamScale')"
+        "Reinstall BamScale from source and re-run."
       ),
       call. = FALSE
     )
@@ -125,7 +166,7 @@ bamfile_path <- function(x) {
   p[[1L]]
 }
 
-fetch_chipseqdbdata_bams <- function(n_target = 12L) {
+fetch_chipseqdbdata_bams <- function(n_target = 8L) {
   require_or_stop("chipseqDBData")
 
   tbl <- chipseqDBData::H3K9acData()
@@ -172,7 +213,7 @@ select_n_files <- function(paths, n_files, allow_repeat = FALSE) {
   if (!allow_repeat) {
     stop(
       "Requested ", n_files, " BAM files but only ", length(paths),
-      " available. Provide more files or set --allow-repeat-files=true.",
+      " are available. Provide more files or use --allow-repeat-files=true.",
       call. = FALSE
     )
   }
@@ -180,13 +221,14 @@ select_n_files <- function(paths, n_files, allow_repeat = FALSE) {
   rep(paths, length.out = n_files)
 }
 
-make_bpparam <- function(workers) {
+make_bpparam <- function(workers, backend = c("snow", "multicore")) {
   workers <- as.integer(workers)
   if (workers <= 1L) return(NULL)
 
   require_or_stop("BiocParallel")
+  backend <- match.arg(backend)
 
-  if (.Platform$OS.type == "unix") {
+  if (backend == "multicore" && .Platform$OS.type == "unix") {
     BiocParallel::MulticoreParam(
       workers = workers,
       progressbar = FALSE,
@@ -206,16 +248,6 @@ stop_bpparam <- function(bp) {
   if (is.null(bp)) return(invisible(NULL))
   try(BiocParallel::bpstop(bp), silent = TRUE)
   invisible(NULL)
-}
-
-resolve_effective_threads <- function(requested_threads, BPPARAM, auto_threads, n_files) {
-  fn <- getFromNamespace(".bamscale_resolve_threads", "BamScale")
-  fn(
-    threads = as.integer(requested_threads),
-    BPPARAM = BPPARAM,
-    auto_threads = as.logical(auto_threads),
-    n_files = as.integer(n_files)
-  )
 }
 
 count_scan_batch <- function(batch) {
@@ -258,17 +290,51 @@ count_records <- function(x) {
 }
 
 bench_times <- function(fun, iterations = 3L, warmup = TRUE) {
+  elapsed <- rep(NA_real_, iterations)
+  errors <- rep(NA_character_, iterations)
+
   if (isTRUE(warmup)) {
-    invisible(fun())
+    message("  warmup: start")
+    warm_status <- tryCatch(
+      {
+        invisible(fun())
+        "ok"
+      },
+      error = function(e) {
+        errors[[1L]] <<- paste("warmup:", conditionMessage(e))
+        "error"
+      }
+    )
+    message("  warmup: ", warm_status)
+    if (warm_status == "error") return(list(elapsed = elapsed, errors = errors))
   }
 
-  elapsed <- numeric(iterations)
   for (i in seq_len(iterations)) {
     gc(verbose = FALSE)
-    elapsed[[i]] <- system.time(fun())[["elapsed"]]
+    message(sprintf("  iteration %d/%d: start", i, iterations))
+
+    t0 <- proc.time()[["elapsed"]]
+    iter_ok <- tryCatch(
+      {
+        invisible(fun())
+        TRUE
+      },
+      error = function(e) {
+        errors[[i]] <<- conditionMessage(e)
+        FALSE
+      }
+    )
+    t1 <- proc.time()[["elapsed"]]
+
+    if (isTRUE(iter_ok)) {
+      elapsed[[i]] <- t1 - t0
+      message(sprintf("  iteration %d/%d: %.3f s", i, iterations, elapsed[[i]]))
+    } else {
+      message(sprintf("  iteration %d/%d: ERROR (%s)", i, iterations, errors[[i]]))
+    }
   }
 
-  elapsed
+  list(elapsed = elapsed, errors = errors)
 }
 
 run_case <- function(
@@ -285,7 +351,9 @@ run_case <- function(
     iterations,
     warmup,
     fun,
-    case_id
+    case_id,
+    comparison_track = "fair",
+    seqqual_mode = NA_character_
 ) {
   message(
     sprintf(
@@ -301,45 +369,22 @@ run_case <- function(
     )
   )
 
+  out <- bench_times(fun, iterations = iterations, warmup = warmup)
+  elapsed <- out$elapsed
+  errors <- out$errors
+
   iter_df <- data.frame(
-    case_id = integer(),
-    iteration = integer(),
-    elapsed_s = numeric(),
-    status = character(),
-    error_message = character(),
+    case_id = rep(case_id, iterations),
+    iteration = seq_len(iterations),
+    elapsed_s = elapsed,
+    status = ifelse(is.finite(elapsed), "ok", "error"),
+    error_message = ifelse(is.finite(elapsed), NA_character_, errors),
     stringsAsFactors = FALSE
   )
 
-  error_message <- NA_character_
-  status <- "ok"
-
-  elapsed <- tryCatch(
-    bench_times(fun, iterations = iterations, warmup = warmup),
-    error = function(e) {
-      status <<- "error"
-      error_message <<- conditionMessage(e)
-      rep(NA_real_, iterations)
-    }
-  )
-
-  for (i in seq_len(iterations)) {
-    iter_df <- rbind(
-      iter_df,
-      data.frame(
-        case_id = case_id,
-        iteration = i,
-        elapsed_s = elapsed[[i]],
-        status = if (is.finite(elapsed[[i]])) "ok" else "error",
-        error_message = if (is.finite(elapsed[[i]])) NA_character_ else error_message,
-        stringsAsFactors = FALSE
-      )
-    )
-  }
-
   valid <- elapsed[is.finite(elapsed)]
-  if (length(valid) == 0L) {
-    status <- "error"
-  }
+  status <- if (length(valid) > 0L) "ok" else "error"
+  error_message <- if (status == "error") paste(unique(na.omit(errors)), collapse = " | ") else NA_character_
 
   min_s <- if (length(valid) > 0L) min(valid) else NA_real_
   median_s <- if (length(valid) > 0L) median(valid) else NA_real_
@@ -348,12 +393,32 @@ run_case <- function(
   records_per_s <- if (!is.na(n_records) && !is.na(median_s) && median_s > 0) n_records / median_s else NA_real_
   mb_per_s <- if (!is.na(total_mb) && !is.na(median_s) && median_s > 0) total_mb / median_s else NA_real_
 
+  comparison_track_scalar <- if (
+    is.null(comparison_track) || length(comparison_track) == 0L ||
+      is.na(comparison_track[[1L]]) || !nzchar(as.character(comparison_track[[1L]]))
+  ) {
+    "fair"
+  } else {
+    as.character(comparison_track[[1L]])
+  }
+
+  seqqual_mode_scalar <- if (
+    is.null(seqqual_mode) || length(seqqual_mode) == 0L ||
+      is.na(seqqual_mode[[1L]]) || !nzchar(as.character(seqqual_mode[[1L]]))
+  ) {
+    NA_character_
+  } else {
+    as.character(seqqual_mode[[1L]])
+  }
+
   summary_df <- data.frame(
     case_id = case_id,
     scenario = scenario,
     workload = workload,
     method = method,
     method_family = method_family,
+    comparison_track = comparison_track_scalar,
+    seqqual_mode = seqqual_mode_scalar,
     threads_requested = as.integer(threads_requested),
     threads_effective = as.integer(threads_effective),
     bp_workers = as.integer(bp_workers),
@@ -426,6 +491,31 @@ write_config <- function(path_out, cfg, opts) {
   }
 }
 
+write_checkpoint <- function(summary_rows, iter_rows, out_dir) {
+  if (length(summary_rows) == 0L || length(iter_rows) == 0L) {
+    return(invisible(NULL))
+  }
+
+  summary_df <- do.call(rbind, summary_rows)
+  iter_df <- do.call(rbind, iter_rows)
+
+  summary_df <- summary_df[order(
+    summary_df$scenario,
+    summary_df$workload,
+    summary_df$comparison_track,
+    summary_df$method_family,
+    summary_df$seqqual_mode,
+    summary_df$threads_effective,
+    summary_df$bp_workers
+  ), ]
+  iter_df <- iter_df[order(iter_df$case_id, iter_df$iteration), ]
+
+  write.csv(summary_df, file = file.path(out_dir, "summary.csv"), row.names = FALSE)
+  write.csv(iter_df, file = file.path(out_dir, "iterations.csv"), row.names = FALSE)
+
+  invisible(list(summary = summary_df, iterations = iter_df))
+}
+
 plot_if_possible <- function(summary_df, out_dir) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(FALSE))
 
@@ -458,18 +548,18 @@ plot_if_possible <- function(summary_df, out_dir) {
     )
   }
 
-  p2_df <- ok[ok$scenario == "multi" & ok$method_family == "BamScale", , drop = FALSE]
+  p2_df <- ok[ok$scenario == "multi", , drop = FALSE]
   if (nrow(p2_df) > 0L) {
     p <- ggplot2::ggplot(
       p2_df,
       ggplot2::aes(x = bp_workers, y = median_s, color = method)
     ) +
       ggplot2::geom_line(linewidth = 0.8) +
-      ggplot2::geom_point(size = 2) +
+      ggplot2::geom_point(size = 1.8) +
       ggplot2::facet_wrap(~workload, scales = "free_y") +
       ggplot2::scale_x_continuous(breaks = sort(unique(p2_df$bp_workers))) +
       ggplot2::labs(
-        title = "Multi-file scaling (BamScale)",
+        title = "Multi-file scaling",
         x = "BiocParallel workers",
         y = "Median elapsed (s)",
         color = "Method"
@@ -491,34 +581,88 @@ plot_if_possible <- function(summary_df, out_dir) {
 args <- commandArgs(trailingOnly = TRUE)
 opts <- parse_args(args)
 
+detected_cores <- as.integer(.bamscale_detect_cores())
+if (length(detected_cores) != 1L || is.na(detected_cores) || detected_cores < 1L) {
+  detected_cores <- 1L
+}
+
+profile <- if (!is.null(opts[["profile"]])) tolower(opts[["profile"]]) else "bamscale_showcase"
+if (!profile %in% c("bamscale_showcase", "balanced", "full")) {
+  stop("--profile must be one of: bamscale_showcase, balanced, full", call. = FALSE)
+}
+
+if (profile == "bamscale_showcase") {
+  default_n_files <- 12L
+  default_threads <- c(1L, 2L, 4L, 8L, 12L, 16L, 24L, 32L, 48L)
+  default_workers <- c(1L, 2L, 4L, 8L, 12L, 16L)
+  default_include_seqqual <- FALSE
+  default_seqqual_compact <- FALSE
+  default_include_galignments <- FALSE
+  default_include_rsamtools <- TRUE
+  default_multi_workloads <- c("step1")
+} else if (profile == "balanced") {
+  default_n_files <- 12L
+  default_threads <- c(1L, 2L, 4L, 8L, 12L, 16L, 24L, 32L, 48L)
+  default_workers <- c(1L, 2L, 4L, 8L, 12L, 16L)
+  default_include_seqqual <- TRUE
+  default_seqqual_compact <- TRUE
+  default_include_galignments <- TRUE
+  default_include_rsamtools <- TRUE
+  default_multi_workloads <- c("step1", "seqqual")
+} else {
+  default_n_files <- 16L
+  default_threads <- c(1L, 2L, 4L, 8L, 12L, 16L, 24L, 32L, 48L, 64L, 96L)
+  default_workers <- c(1L, 2L, 4L, 8L, 12L, 16L, 24L, 32L, 48L, 64L, 96L)
+  default_include_seqqual <- TRUE
+  default_seqqual_compact <- TRUE
+  default_include_galignments <- TRUE
+  default_include_rsamtools <- TRUE
+  default_multi_workloads <- c("step1", "seqqual", "galignments")
+}
+
+default_budget_threads <- as.integer(min(48L, detected_cores))
+requested_budget_threads <- as_int_scalar(opts[["budget-threads"]], default_budget_threads)
+requested_max_threads <- as_int_scalar(opts[["max-threads"]], requested_budget_threads)
+max_threads <- as.integer(max(1L, min(requested_max_threads, detected_cores)))
+if (requested_max_threads > detected_cores) {
+  message("Capping --max-threads to detected cores: ", detected_cores)
+}
+
 cfg <- list(
   outdir = if (!is.null(opts$outdir)) opts$outdir else "benchmark_results",
-  n_files = as_int_scalar(opts[["n-files"]], 12L),
+  profile = profile,
+  detected_cores = as.integer(detected_cores),
+  budget_threads = as.integer(requested_budget_threads),
+  n_files = as_int_scalar(opts[["n-files"]], default_n_files),
   iterations = as_int_scalar(opts$iterations, 3L),
   warmup = as_bool(opts$warmup, TRUE),
-  threads = as_int_vec(opts$threads, c(1L, 2L, 4L, 8L, 12L, 18L, 24L, 36L, 48L, 72L)),
-  workers = as_int_vec(opts$workers, c(1L, 2L, 4L, 6L, 8L, 12L, 18L, 24L, 36L, 72L)),
-  max_threads = as_int_scalar(opts[["max-threads"]], 72L),
-  include_seqqual = as_bool(opts[["include-seqqual"]], TRUE),
-  include_galignments = as_bool(opts[["include-galignments"]], TRUE),
+  max_threads = as.integer(max_threads),
+  threads = as_int_vec(opts$threads, default_threads),
+  workers = as_int_vec(opts$workers, default_workers),
+  bp_backend = if (!is.null(opts[["bp-backend"]])) tolower(opts[["bp-backend"]]) else "snow",
+  include_seqqual = as_bool(opts[["include-seqqual"]], default_include_seqqual),
+  seqqual_compact = as_bool(opts[["seqqual-compact"]], default_seqqual_compact),
+  include_galignments = as_bool(opts[["include-galignments"]], default_include_galignments),
   include_multi = as_bool(opts[["include-multi"]], TRUE),
-  include_rsamtools = as_bool(opts[["include-rsamtools"]], TRUE),
+  include_rsamtools = as_bool(opts[["include-rsamtools"]], default_include_rsamtools),
   ensure_index = as_bool(opts[["ensure-index"]], TRUE),
   allow_repeat_files = as_bool(opts[["allow-repeat-files"]], FALSE),
   recursive = as_bool(opts$recursive, TRUE),
-  multi_workloads = as_chr_vec(opts[["multi-workloads"]], c("step1")),
+  multi_workloads = as_chr_vec(opts[["multi-workloads"]], default_multi_workloads),
   compute_records = as_bool(opts[["compute-records"]], TRUE)
 )
+if (!cfg$bp_backend %in% c("snow", "multicore")) {
+  stop("--bp-backend must be one of: snow,multicore", call. = FALSE)
+}
 
 cfg$threads <- cfg$threads[cfg$threads >= 1L & cfg$threads <= cfg$max_threads]
 if (length(cfg$threads) == 0L) {
-  stop("No valid --threads values after filtering by --max-threads", call. = FALSE)
+  stop("No valid --threads values after applying max thread cap", call. = FALSE)
 }
 
 cfg$workers <- cfg$workers[cfg$workers >= 1L & cfg$workers <= cfg$max_threads]
-if (length(cfg$workers) == 0L) {
-  cfg$workers <- 1L
-}
+if (length(cfg$workers) == 0L) cfg$workers <- 1L
+if (!isTRUE(cfg$include_seqqual)) cfg$seqqual_compact <- FALSE
 
 run_stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
 out_dir <- file.path(cfg$outdir, paste0("run_", run_stamp))
@@ -563,7 +707,6 @@ if (length(bam_paths) == 0L) {
 sizes <- file.size(bam_paths)
 ord <- order(sizes, decreasing = TRUE)
 bam_paths <- bam_paths[ord]
-sizes <- sizes[ord]
 
 single_file <- bam_paths[[1L]]
 multi_files <- select_n_files(
@@ -572,8 +715,7 @@ multi_files <- select_n_files(
   allow_repeat = cfg$allow_repeat_files
 )
 
-effective_workers_cap <- min(length(multi_files), cfg$max_threads)
-cfg$workers <- cfg$workers[cfg$workers <= effective_workers_cap]
+cfg$workers <- cfg$workers[cfg$workers <= length(multi_files)]
 if (length(cfg$workers) == 0L) cfg$workers <- 1L
 
 files_df <- data.frame(
@@ -596,15 +738,18 @@ if (cfg$include_rsamtools && cfg$ensure_index) {
 workloads <- list(
   step1 = list(
     what = c("qname", "flag", "rname", "pos", "mapq", "cigar"),
-    as = "data.frame"
+    as = "data.frame",
+    seqqual_mode = "compatible"
   ),
   seqqual = list(
     what = c("qname", "seq", "qual"),
-    as = "data.frame"
+    as = "data.frame",
+    seqqual_mode = "compatible"
   ),
   galignments = list(
     what = c("qname", "rname", "pos", "cigar", "strand", "flag"),
-    as = "GAlignments"
+    as = "GAlignments",
+    seqqual_mode = "compatible"
   )
 )
 
@@ -612,13 +757,17 @@ active_workloads <- c("step1")
 if (isTRUE(cfg$include_seqqual)) active_workloads <- c(active_workloads, "seqqual")
 if (isTRUE(cfg$include_galignments)) active_workloads <- c(active_workloads, "galignments")
 
-cfg$multi_workloads <- unique(intersect(cfg$multi_workloads, names(workloads)))
+cfg$multi_workloads <- unique(intersect(cfg$multi_workloads, active_workloads))
 if (length(cfg$multi_workloads) == 0L) cfg$multi_workloads <- "step1"
 
 message("Single-file benchmark target: ", single_file)
 message("Multi-file count: ", length(multi_files))
-message("Threads grid: ", paste(cfg$threads, collapse = ", "))
+message(paste0("Threads grid (<= max_threads=", cfg$max_threads, "): ", paste(cfg$threads, collapse = ", ")))
 message("Workers grid: ", paste(cfg$workers, collapse = ", "))
+message("Profile: ", cfg$profile)
+message("Budget threads: ", cfg$budget_threads, " | Detected cores: ", cfg$detected_cores)
+message("BiocParallel backend: ", cfg$bp_backend)
+message("Seq/qual compact track: ", cfg$seqqual_compact)
 
 summary_rows <- list()
 iter_rows <- list()
@@ -636,7 +785,9 @@ if (isTRUE(cfg$compute_records)) {
       file = single_file,
       what = spec$what,
       as = spec$as,
-      threads = 1L
+      seqqual_mode = spec$seqqual_mode,
+      threads = 1L,
+      auto_threads = FALSE
     )
     single_records[[w]] <- count_records(ref)
   }
@@ -651,6 +802,7 @@ if (isTRUE(cfg$compute_records)) {
       file = multi_files,
       what = spec$what,
       as = spec$as,
+      seqqual_mode = spec$seqqual_mode,
       threads = 1L,
       BPPARAM = NULL,
       auto_threads = FALSE
@@ -682,16 +834,56 @@ for (w in active_workloads) {
           file = single_file,
           what = spec$what,
           as = spec$as,
+          seqqual_mode = spec$seqqual_mode,
           threads = t,
           BPPARAM = NULL,
           auto_threads = FALSE
         )
       },
-      case_id = case_id
+      case_id = case_id,
+      comparison_track = "fair",
+      seqqual_mode = if (w == "seqqual") "compatible" else NA_character_
     )
 
     summary_rows[[length(summary_rows) + 1L]] <- out$summary
     iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+    write_checkpoint(summary_rows, iter_rows, out_dir)
+
+    if (w == "seqqual" && isTRUE(cfg$seqqual_compact)) {
+      case_id <- case_id + 1L
+      out <- run_case(
+        scenario = "single",
+        workload = w,
+        method = "BamScale (compact seqqual)",
+        method_family = "BamScale",
+        threads_requested = t,
+        threads_effective = t,
+        bp_workers = 1L,
+        n_files = 1L,
+        n_records = single_records[[w]],
+        total_mb = single_mb,
+        iterations = cfg$iterations,
+        warmup = cfg$warmup,
+        fun = function() {
+          BamScale::bam_read(
+            file = single_file,
+            what = spec$what,
+            as = spec$as,
+            seqqual_mode = "compact",
+            threads = t,
+            BPPARAM = NULL,
+            auto_threads = FALSE
+          )
+        },
+        case_id = case_id,
+        comparison_track = "optimized",
+        seqqual_mode = "compact"
+      )
+
+      summary_rows[[length(summary_rows) + 1L]] <- out$summary
+      iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+      write_checkpoint(summary_rows, iter_rows, out_dir)
+    }
   }
 
   if (cfg$include_rsamtools && w %in% c("step1", "seqqual") && requireNamespace("Rsamtools", quietly = TRUE)) {
@@ -718,6 +910,7 @@ for (w in active_workloads) {
 
     summary_rows[[length(summary_rows) + 1L]] <- out$summary
     iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+    write_checkpoint(summary_rows, iter_rows, out_dir)
   }
 
   if (w == "galignments" && requireNamespace("GenomicAlignments", quietly = TRUE) && requireNamespace("Rsamtools", quietly = TRUE)) {
@@ -744,6 +937,7 @@ for (w in active_workloads) {
 
     summary_rows[[length(summary_rows) + 1L]] <- out$summary
     iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+    write_checkpoint(summary_rows, iter_rows, out_dir)
   }
 }
 
@@ -752,29 +946,26 @@ if (isTRUE(cfg$include_multi)) {
     spec <- workloads[[w]]
 
     for (workers in cfg$workers) {
-      bp <- tryCatch(make_bpparam(workers), error = function(e) e)
+      bp <- tryCatch(
+        make_bpparam(workers, backend = cfg$bp_backend),
+        error = function(e) e
+      )
+
       if (inherits(bp, "error")) {
         message("Skipping workers=", workers, " because BPPARAM init failed: ", conditionMessage(bp))
         next
       }
 
-      on.exit(stop_bpparam(bp), add = TRUE)
-
-      eff_auto <- resolve_effective_threads(
-        requested_threads = cfg$max_threads,
-        BPPARAM = bp,
-        auto_threads = TRUE,
-        n_files = length(multi_files)
-      )
+      threads_each <- max(1L, floor(cfg$max_threads / workers))
 
       case_id <- case_id + 1L
       out <- run_case(
         scenario = "multi",
         workload = w,
-        method = "BamScale (auto_threads)",
+        method = "BamScale (balanced budget)",
         method_family = "BamScale",
-        threads_requested = cfg$max_threads,
-        threads_effective = eff_auto,
+        threads_requested = threads_each,
+        threads_effective = threads_each,
         bp_workers = workers,
         n_files = length(multi_files),
         n_records = multi_records[[w]],
@@ -786,47 +977,56 @@ if (isTRUE(cfg$include_multi)) {
             file = multi_files,
             what = spec$what,
             as = spec$as,
-            threads = cfg$max_threads,
-            BPPARAM = bp,
-            auto_threads = TRUE
-          )
-        },
-        case_id = case_id
-      )
-
-      summary_rows[[length(summary_rows) + 1L]] <- out$summary
-      iter_rows[[length(iter_rows) + 1L]] <- out$iterations
-
-      balanced_threads <- max(1L, floor(cfg$max_threads / workers))
-      case_id <- case_id + 1L
-      out <- run_case(
-        scenario = "multi",
-        workload = w,
-        method = "BamScale (manual balanced)",
-        method_family = "BamScale",
-        threads_requested = balanced_threads,
-        threads_effective = balanced_threads,
-        bp_workers = workers,
-        n_files = length(multi_files),
-        n_records = multi_records[[w]],
-        total_mb = multi_mb,
-        iterations = cfg$iterations,
-        warmup = cfg$warmup,
-        fun = function() {
-          BamScale::bam_read(
-            file = multi_files,
-            what = spec$what,
-            as = spec$as,
-            threads = balanced_threads,
+            seqqual_mode = spec$seqqual_mode,
+            threads = threads_each,
             BPPARAM = bp,
             auto_threads = FALSE
           )
         },
-        case_id = case_id
+        case_id = case_id,
+        comparison_track = "fair",
+        seqqual_mode = if (w == "seqqual") "compatible" else NA_character_
       )
 
       summary_rows[[length(summary_rows) + 1L]] <- out$summary
       iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+      write_checkpoint(summary_rows, iter_rows, out_dir)
+
+      if (w == "seqqual" && isTRUE(cfg$seqqual_compact)) {
+        case_id <- case_id + 1L
+        out <- run_case(
+          scenario = "multi",
+          workload = w,
+          method = "BamScale (compact seqqual budget)",
+          method_family = "BamScale",
+          threads_requested = threads_each,
+          threads_effective = threads_each,
+          bp_workers = workers,
+          n_files = length(multi_files),
+          n_records = multi_records[[w]],
+          total_mb = multi_mb,
+          iterations = cfg$iterations,
+          warmup = cfg$warmup,
+          fun = function() {
+            BamScale::bam_read(
+              file = multi_files,
+              what = spec$what,
+              as = spec$as,
+              seqqual_mode = "compact",
+              threads = threads_each,
+              BPPARAM = bp,
+              auto_threads = FALSE
+            )
+          },
+          case_id = case_id,
+          comparison_track = "optimized",
+          seqqual_mode = "compact"
+        )
+
+        summary_rows[[length(summary_rows) + 1L]] <- out$summary
+        iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+        write_checkpoint(summary_rows, iter_rows, out_dir)
+      }
 
       if (cfg$include_rsamtools && w %in% c("step1", "seqqual") && requireNamespace("Rsamtools", quietly = TRUE)) {
         case_id <- case_id + 1L
@@ -851,6 +1051,7 @@ if (isTRUE(cfg$include_multi)) {
 
         summary_rows[[length(summary_rows) + 1L]] <- out$summary
         iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+        write_checkpoint(summary_rows, iter_rows, out_dir)
       }
 
       if (w == "galignments" && requireNamespace("GenomicAlignments", quietly = TRUE) && requireNamespace("Rsamtools", quietly = TRUE)) {
@@ -876,6 +1077,7 @@ if (isTRUE(cfg$include_multi)) {
 
         summary_rows[[length(summary_rows) + 1L]] <- out$summary
         iter_rows[[length(iter_rows) + 1L]] <- out$iterations
+        write_checkpoint(summary_rows, iter_rows, out_dir)
       }
 
       stop_bpparam(bp)
@@ -883,14 +1085,9 @@ if (isTRUE(cfg$include_multi)) {
   }
 }
 
-summary_df <- do.call(rbind, summary_rows)
-iter_df <- do.call(rbind, iter_rows)
+final <- write_checkpoint(summary_rows, iter_rows, out_dir)
+summary_df <- final$summary
 
-summary_df <- summary_df[order(summary_df$scenario, summary_df$workload, summary_df$method_family, summary_df$threads_effective, summary_df$bp_workers), ]
-iter_df <- iter_df[order(iter_df$case_id, iter_df$iteration), ]
-
-write.csv(summary_df, file = file.path(out_dir, "summary.csv"), row.names = FALSE)
-write.csv(iter_df, file = file.path(out_dir, "iterations.csv"), row.names = FALSE)
 write_config(file.path(out_dir, "config.txt"), cfg = cfg, opts = opts)
 write_session_info(file.path(out_dir, "sessionInfo.txt"))
 plot_if_possible(summary_df, out_dir)

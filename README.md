@@ -1,10 +1,11 @@
 # BamScale
 
-[![R-CMD-check](https://github.com/chiragp/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/chiragp/BamScale/actions/workflows/R-CMD-check.yaml)
-[![Benchmark Report](https://github.com/chiragp/BamScale/actions/workflows/render-benchmark-vignette.yml/badge.svg)](https://github.com/chiragp/BamScale/actions/workflows/render-benchmark-vignette.yml)
-[![codecov](https://codecov.io/gh/chiragp/BamScale/branch/main/graph/badge.svg)](https://app.codecov.io/gh/chiragp/BamScale)
-[![Bioconductor build](https://bioconductor.org/shields/build/release/bioc/BamScale.svg)](https://bioconductor.org/checkResults/release/bioc-LATEST/BamScale/)
-[![Bioconductor downloads](https://bioconductor.org/shields/downloads/release/BamScale.svg)](https://bioconductor.org/packages/BamScale/)
+<img src="man/figures/BamScale-logo.png" align="right" height="139" alt="BamScale logo" />
+
+[![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
+[![Benchmark Report](https://img.shields.io/badge/Benchmarks-Quarto-blue)](inst/benchmarks/)
+[![codecov](https://img.shields.io/badge/Coverage-Codecov-lightgrey)](https://app.codecov.io/)
+[![Bioconductor](https://img.shields.io/badge/Bioconductor-targeted-green)](https://bioconductor.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 

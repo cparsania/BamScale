@@ -1,11 +1,11 @@
 ---
-title: "BamScale Server Benchmark Report"
+title: "BamScale Benchmark Report (budget-aware profile)"
 format:
   html:
     toc: true
     number-sections: true
 params:
-  results_dir: "benchmark_results"
+  results_dir: "run_20260220_145828"
 execute:
   echo: false
   warning: false
@@ -15,6 +15,13 @@ execute:
 ## Inputs
 
 ```{r}
+suppressPackageStartupMessages({
+  library(readr)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+})
+
 results_dir <- params$results_dir
 summary_path <- file.path(results_dir, "summary.csv")
 iter_path <- file.path(results_dir, "iterations.csv")
@@ -23,17 +30,28 @@ config_path <- file.path(results_dir, "config.txt")
 
 stopifnot(file.exists(summary_path))
 
-summary_df <- read.csv(summary_path, stringsAsFactors = FALSE)
-iter_df <- if (file.exists(iter_path)) read.csv(iter_path, stringsAsFactors = FALSE) else data.frame()
-files_df <- if (file.exists(files_path)) read.csv(files_path, stringsAsFactors = FALSE) else data.frame()
+summary_df <- readr::read_csv(summary_path, show_col_types = FALSE)
+iter_df <- if (file.exists(iter_path)) readr::read_csv(iter_path, show_col_types = FALSE) else tibble::tibble()
+files_df <- if (file.exists(files_path)) readr::read_csv(files_path, show_col_types = FALSE) else tibble::tibble()
 
-summary_ok <- subset(summary_df, status == "ok")
+if (!"comparison_track" %in% colnames(summary_df)) summary_df$comparison_track <- "fair"
+if (!"seqqual_mode" %in% colnames(summary_df)) summary_df$seqqual_mode <- NA_character_
+
+summary_df <- summary_df %>%
+  mutate(
+    comparison_track = if_else(is.na(comparison_track) | !nzchar(comparison_track), "fair", comparison_track),
+    seqqual_mode = if_else(is.na(seqqual_mode) | !nzchar(seqqual_mode), NA_character_, seqqual_mode)
+  )
+
+summary_ok <- summary_df %>% filter(status == "ok")
+fair_ok <- summary_ok %>% filter(comparison_track == "fair")
+optimized_ok <- summary_ok %>% filter(comparison_track == "optimized")
 ```
 
-- Results directory: `r normalizePath(results_dir, winslash = "/", mustWork = FALSE)`
-- Total cases: `r nrow(summary_df)`
-- Successful: `r sum(summary_df$status == "ok")`
-- Failed: `r sum(summary_df$status != "ok")`
+-   Results directory: `r normalizePath(results_dir, winslash = "/", mustWork = FALSE)`
+-   Total cases: `r nrow(summary_df)`
+-   Successful: `r sum(summary_df$status == "ok")`
+-   Failed: `r sum(summary_df$status != "ok")`
 
 ## Configuration
 
@@ -45,98 +63,427 @@ if (file.exists(config_path)) {
 }
 ```
 
-## Files Used
+## Files
 
 ```{r}
 if (nrow(files_df) > 0) {
-  knitr::kable(files_df, digits = 3)
+  files_df %>%
+    mutate(size_mb = round(size_mb, 3)) %>%
+    knitr::kable()
 } else {
   cat("No files.csv found")
 }
 ```
 
-## Summary Table
+## Summary
 
 ```{r}
-show_cols <- c(
-  "scenario", "workload", "method", "threads_requested", "threads_effective",
-  "bp_workers", "n_files", "median_s", "records_per_s", "mb_per_s", "status"
-)
-show_cols <- intersect(show_cols, colnames(summary_df))
-knitr::kable(summary_df[order(summary_df$scenario, summary_df$workload, summary_df$median_s), show_cols, drop = FALSE], digits = 4)
+summary_df %>%
+  arrange(scenario, workload, median_s) %>%
+  select(
+    scenario, comparison_track, workload, seqqual_mode, method,
+    threads_effective, bp_workers, n_files, median_s, records_per_s,
+    mb_per_s, status
+  ) %>%
+  mutate(
+    median_s = round(median_s, 4),
+    records_per_s = round(records_per_s, 2),
+    mb_per_s = round(mb_per_s, 2)
+  ) %>%
+  knitr::kable()
+```
+
+## Key Results
+
+```{r}
+bamscale_single <- summary_ok %>%
+  filter(scenario == "single", method_family == "BamScale", comparison_track == "fair")
+
+speedup_tbl <- bamscale_single %>%
+  group_by(workload) %>%
+  mutate(
+    baseline_1t_s = median_s[threads_effective == 1][1],
+    speedup_vs_1t = baseline_1t_s / median_s
+  ) %>%
+  ungroup() %>%
+  group_by(workload) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  transmute(
+    workload,
+    best_threads = threads_effective,
+    best_median_s = round(median_s, 4),
+    speedup_vs_1t = round(speedup_vs_1t, 3)
+  )
+
+if (nrow(speedup_tbl) > 0) {
+  knitr::kable(speedup_tbl)
+} else {
+  cat("No successful BamScale single-file cases")
+}
+```
+
+```{r}
+best_bamscale <- summary_ok %>%
+  filter(scenario == "single", method_family == "BamScale", comparison_track == "fair") %>%
+  group_by(workload) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(workload, bamscale_method = method, bamscale_median_s = median_s)
+
+best_comparator <- summary_ok %>%
+  filter(scenario == "single", method_family != "BamScale", comparison_track == "fair") %>%
+  group_by(workload) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(workload, comparator = method, comparator_median_s = median_s)
+
+rel_tbl <- best_bamscale %>%
+  left_join(best_comparator, by = "workload") %>%
+  mutate(
+    ratio_comp_over_bamscale = comparator_median_s / bamscale_median_s,
+    bamscale_median_s = round(bamscale_median_s, 4),
+    comparator_median_s = round(comparator_median_s, 4),
+    ratio_comp_over_bamscale = round(ratio_comp_over_bamscale, 3)
+  )
+
+if (nrow(rel_tbl) > 0) {
+  knitr::kable(rel_tbl)
+} else {
+  cat("No comparator rows available")
+}
+```
+
+## Multi-File Winners
+
+```{r}
+multi_best_by_family <- summary_ok %>%
+  filter(scenario == "multi", comparison_track == "fair") %>%
+  group_by(workload, method_family) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(
+    config = paste0("workers=", bp_workers, ", threads=", threads_effective, ", total_threads=", total_threads),
+    median_s = round(median_s, 4),
+    records_per_s = round(records_per_s, 2),
+    mb_per_s = round(mb_per_s, 2)
+  ) %>%
+  select(workload, method_family, method, config, median_s, records_per_s, mb_per_s)
+
+multi_best_overall <- summary_ok %>%
+  filter(scenario == "multi", comparison_track == "fair") %>%
+  group_by(workload) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(
+    config = paste0("workers=", bp_workers, ", threads=", threads_effective, ", total_threads=", total_threads),
+    median_s = round(median_s, 4),
+    records_per_s = round(records_per_s, 2),
+    mb_per_s = round(mb_per_s, 2)
+  ) %>%
+  select(workload, winner_family = method_family, winner_method = method, config, median_s, records_per_s, mb_per_s)
+
+if (nrow(multi_best_by_family) > 0) {
+  cat("Best per workload within each method family\n\n")
+  knitr::kable(multi_best_by_family)
+  cat("\nBest overall per workload\n\n")
+  knitr::kable(multi_best_overall)
+} else {
+  cat("No successful multi-file rows")
+}
+```
+
+## BamScale vs Comparator Ratios (Multi-File)
+
+```{r}
+multi_bamscale <- summary_ok %>%
+  filter(scenario == "multi", method_family == "BamScale", comparison_track == "fair") %>%
+  group_by(workload) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    workload,
+    bamscale_method = method,
+    bamscale_median_s = median_s,
+    bamscale_threads = threads_effective,
+    bamscale_workers = bp_workers
+  )
+
+multi_comp <- summary_ok %>%
+  filter(scenario == "multi", method_family != "BamScale", comparison_track == "fair") %>%
+  group_by(workload) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    workload,
+    comp_family = method_family,
+    comp_method = method,
+    comp_median_s = median_s,
+    comp_threads = threads_effective,
+    comp_workers = bp_workers
+  )
+
+multi_rel_tbl <- multi_bamscale %>%
+  left_join(multi_comp, by = "workload") %>%
+  mutate(
+    ratio_comp_over_bamscale = comp_median_s / bamscale_median_s,
+    interpretation = dplyr::case_when(
+      is.na(comp_median_s) ~ "No comparator",
+      ratio_comp_over_bamscale > 1 ~ "BamScale faster",
+      ratio_comp_over_bamscale < 1 ~ "Comparator faster",
+      TRUE ~ "Tie"
+    ),
+    bamscale_median_s = round(bamscale_median_s, 4),
+    comp_median_s = round(comp_median_s, 4),
+    ratio_comp_over_bamscale = round(ratio_comp_over_bamscale, 3)
+  ) %>%
+  select(
+    workload,
+    bamscale_method,
+    bamscale_workers,
+    bamscale_threads,
+    bamscale_median_s,
+    comp_family,
+    comp_method,
+    comp_workers,
+    comp_threads,
+    comp_median_s,
+    ratio_comp_over_bamscale,
+    interpretation
+  )
+
+if (nrow(multi_rel_tbl) > 0) {
+  knitr::kable(multi_rel_tbl)
+} else {
+  cat("No multi-file comparator rows available")
+}
+```
+
+## BamScale Multi-File Config Sensitivity
+
+```{r}
+bamscale_multi_profile <- summary_ok %>%
+  filter(scenario == "multi", method_family == "BamScale", comparison_track == "fair") %>%
+  group_by(workload) %>%
+  mutate(
+    best_median_s = min(median_s, na.rm = TRUE),
+    slowdown_vs_best = median_s / best_median_s
+  ) %>%
+  ungroup() %>%
+  mutate(
+    config = paste0("workers=", bp_workers, ", threads=", threads_effective, ", total_threads=", total_threads),
+    median_s = round(median_s, 4),
+    best_median_s = round(best_median_s, 4),
+    slowdown_vs_best = round(slowdown_vs_best, 3)
+  ) %>%
+  arrange(workload, median_s) %>%
+  select(workload, config, median_s, best_median_s, slowdown_vs_best, records_per_s, mb_per_s)
+
+if (nrow(bamscale_multi_profile) > 0) {
+  knitr::kable(bamscale_multi_profile)
+} else {
+  cat("No BamScale multi-file rows")
+}
 ```
 
 ## Single-File Scaling (BamScale)
 
 ```{r}
-if (requireNamespace("ggplot2", quietly = TRUE)) {
-  df <- subset(summary_ok, scenario == "single" & method_family == "BamScale")
-  if (nrow(df) > 0) {
-    ggplot2::ggplot(df, ggplot2::aes(x = threads_effective, y = median_s, color = workload)) +
-      ggplot2::geom_line(linewidth = 0.9) +
-      ggplot2::geom_point(size = 2) +
-      ggplot2::scale_x_continuous(breaks = sort(unique(df$threads_effective))) +
-      ggplot2::labs(
-        title = "BamScale single-file thread scaling",
-        x = "Threads",
-        y = "Median elapsed (s)",
-        color = "Workload"
-      ) +
-      ggplot2::theme_minimal(base_size = 13)
-  } else {
-    cat("No successful single-file BamScale cases")
-  }
+plot_df <- summary_ok %>%
+  filter(scenario == "single", method_family == "BamScale", comparison_track == "fair")
+
+if (nrow(plot_df) > 0) {
+  ggplot(plot_df, aes(x = threads_effective, y = median_s, color = workload)) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 2) +
+    scale_x_continuous(breaks = sort(unique(plot_df$threads_effective))) +
+    labs(
+      title = "BamScale single-file scaling",
+      x = "Threads",
+      y = "Median elapsed (s)",
+      color = "Workload"
+    ) +
+    theme_minimal(base_size = 13)
 } else {
-  cat("Install ggplot2 for plots")
+  cat("No successful single-file BamScale cases")
+}
+```
+
+## Single-File Method Comparison
+
+```{r}
+compare_df <- summary_ok %>%
+  filter(scenario == "single", comparison_track == "fair") %>%
+  group_by(workload, method_family) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(
+    median_s = as.numeric(median_s),
+    method = as.character(method)
+  ) %>%
+  filter(is.finite(median_s))
+
+if (nrow(compare_df) > 0) {
+  p_compare <- ggplot(compare_df, aes(x = method, y = median_s, fill = method_family)) +
+    geom_col(width = 0.7) +
+    geom_text(aes(label = round(median_s, 2)), vjust = -0.25, size = 3) +
+    facet_wrap(~workload, scales = "free_y") +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
+    labs(
+      title = "Best single-file runtime per method family",
+      x = "Method",
+      y = "Median elapsed (s)",
+      fill = "Family"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 20, hjust = 1))
+  print(p_compare)
+  knitr::kable(compare_df %>% select(workload, method_family, method, median_s))
+} else {
+  cat("No successful single-file rows")
 }
 ```
 
 ## Multi-File Scaling
 
 ```{r}
-if (requireNamespace("ggplot2", quietly = TRUE)) {
-  df <- subset(summary_ok, scenario == "multi")
-  if (nrow(df) > 0) {
-    ggplot2::ggplot(df, ggplot2::aes(x = bp_workers, y = median_s, color = method)) +
-      ggplot2::geom_line(linewidth = 0.8) +
-      ggplot2::geom_point(size = 1.8) +
-      ggplot2::facet_wrap(~workload, scales = "free_y") +
-      ggplot2::scale_x_continuous(breaks = sort(unique(df$bp_workers))) +
-      ggplot2::labs(
-        title = "Multi-file scaling by workers",
-        x = "BiocParallel workers",
-        y = "Median elapsed (s)",
-        color = "Method"
-      ) +
-      ggplot2::theme_minimal(base_size = 12)
-  } else {
-    cat("No successful multi-file cases")
-  }
+multi_df <- summary_ok %>%
+  filter(scenario == "multi", comparison_track == "fair")
+
+if (nrow(multi_df) > 0) {
+  ggplot(multi_df, aes(x = bp_workers, y = median_s, color = method)) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 2) +
+    facet_wrap(~workload, scales = "free_y") +
+    scale_x_continuous(breaks = sort(unique(multi_df$bp_workers))) +
+    labs(
+      title = "Multi-file scaling",
+      x = "BiocParallel workers",
+      y = "Median elapsed (s)",
+      color = "Method"
+    ) +
+    theme_minimal(base_size = 12)
 } else {
-  cat("Install ggplot2 for plots")
+  cat("No successful multi-file cases")
 }
 ```
 
-## Throughput View
+## Worker/Thread Tradeoff Note
+
+Higher `bp_workers` with lower per-worker threads can be slower, even at similar `total_threads`. This is usually due to process/serialization overhead and shared I/O or memory contention. This is expected for BamScale and can also appear with Rsamtools/GenomicAlignments in multi-process mode.
 
 ```{r}
-if (requireNamespace("ggplot2", quietly = TRUE)) {
-  df <- subset(summary_ok, !is.na(records_per_s) & records_per_s > 0)
-  if (nrow(df) > 0) {
-    ggplot2::ggplot(df, ggplot2::aes(x = total_threads, y = records_per_s, color = method_family)) +
-      ggplot2::geom_point(alpha = 0.85, size = 2) +
-      ggplot2::facet_grid(scenario ~ workload, scales = "free") +
-      ggplot2::labs(
-        title = "Throughput vs effective total threads",
-        x = "Effective total threads",
-        y = "Records per second",
-        color = "Family"
-      ) +
-      ggplot2::theme_minimal(base_size = 12)
-  } else {
-    cat("No throughput values available")
-  }
+tradeoff_df <- fair_ok %>%
+  filter(scenario == "multi") %>%
+  group_by(workload, method_family, total_threads) %>%
+  summarise(
+    best_1worker_s = {
+      x <- median_s[bp_workers == 1]
+      if (length(x) == 0L) NA_real_ else min(x, na.rm = TRUE)
+    },
+    best_multiworker_s = {
+      x <- median_s[bp_workers > 1]
+      if (length(x) == 0L) NA_real_ else min(x, na.rm = TRUE)
+    },
+    .groups = "drop"
+  ) %>%
+  mutate(
+    multi_over_1worker = best_multiworker_s / best_1worker_s,
+    interpretation = dplyr::case_when(
+      is.na(best_1worker_s) ~ "No 1-worker case",
+      is.na(best_multiworker_s) ~ "No >1-worker case",
+      multi_over_1worker > 1 ~ "1-worker faster",
+      multi_over_1worker < 1 ~ ">1-workers faster",
+      TRUE ~ "Tie"
+    ),
+    best_1worker_s = round(best_1worker_s, 4),
+    best_multiworker_s = round(best_multiworker_s, 4),
+    multi_over_1worker = round(multi_over_1worker, 3)
+  ) %>%
+  arrange(workload, method_family, total_threads)
+
+if (nrow(tradeoff_df) > 0) {
+  knitr::kable(tradeoff_df)
 } else {
-  cat("Install ggplot2 for plots")
+  cat("No fair multi-file rows available for worker/thread tradeoff analysis")
+}
+```
+
+## Throughput
+
+```{r}
+thr_df <- summary_ok %>%
+  filter(!is.na(records_per_s), records_per_s > 0)
+
+if (nrow(thr_df) > 0) {
+  ggplot(thr_df, aes(x = total_threads, y = records_per_s, color = method_family, shape = comparison_track)) +
+    geom_point(alpha = 0.85, size = 2) +
+    facet_grid(scenario ~ workload, scales = "free") +
+    labs(
+      title = "Throughput vs effective total threads",
+      x = "Effective total threads",
+      y = "Records per second",
+      color = "Family",
+      shape = "Track"
+    ) +
+    theme_minimal(base_size = 12)
+} else {
+  cat("No throughput values available")
+}
+```
+
+## Seq/Qual Compact Gain (BamScale)
+
+```{r}
+seqqual_modes <- summary_ok %>%
+  filter(
+    workload == "seqqual",
+    method_family == "BamScale",
+    seqqual_mode %in% c("compatible", "compact")
+  )
+
+seqqual_best <- seqqual_modes %>%
+  group_by(scenario, seqqual_mode) %>%
+  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    scenario,
+    seqqual_mode,
+    method,
+    threads_effective,
+    bp_workers,
+    median_s,
+    records_per_s,
+    mb_per_s
+  ) %>%
+  mutate(
+    median_s = round(median_s, 4),
+    records_per_s = round(records_per_s, 2),
+    mb_per_s = round(mb_per_s, 2)
+  )
+
+seqqual_rel <- seqqual_best %>%
+  select(
+    scenario,
+    seqqual_mode,
+    median_s,
+    records_per_s
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = seqqual_mode,
+    values_from = c(median_s, records_per_s)
+  ) %>%
+  mutate(
+    compact_speedup_vs_compatible = median_s_compatible / median_s_compact,
+    compact_speedup_vs_compatible = round(compact_speedup_vs_compatible, 3)
+  )
+
+if (nrow(seqqual_best) > 0) {
+  cat("Best seq/qual mode results\n\n")
+  knitr::kable(seqqual_best)
+  cat("\nCompact mode gain vs compatible mode\n\n")
+  knitr::kable(seqqual_rel)
+} else {
+  cat("No BamScale seq/qual mode rows found")
 }
 ```

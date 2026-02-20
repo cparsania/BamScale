@@ -24,6 +24,13 @@ Report sections that claim cross-package comparison use only the `fair` track.
   - `threads_each = floor(max_threads / workers)`
   - approx total threads: `workers * threads_each`.
 
+## Scaling interpretation note
+
+- In multi-file runs, increasing `workers` while reducing per-worker threads can be slower even at similar `total_threads`.
+- Main causes: process/socket serialization overhead (`SnowParam`), object allocation pressure, and shared disk/memory bandwidth contention.
+- This pattern can appear for BamScale, Rsamtools, and GenomicAlignments in multi-process mode.
+- The report includes a dedicated **Worker/Thread Tradeoff Note** table to make this explicit.
+
 ## 1) Run benchmark on server (recommended)
 
 Example (showcase profile, favorable to BamScale):
