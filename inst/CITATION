@@ -17,11 +17,11 @@ citHeader("To cite BamScale in publications, use:")
 bibentry(
   bibtype = "Manual",
   title = meta[["Title"]],
-  author = c(person(given = "Chirag", family = "Patel")),
+  author = c(person(given = "Chirag", family = "Parsania")),
   year = year,
   note = paste("R package version", meta[["Version"]]),
   textVersion = paste0(
-    "Patel C (", year, "). ",
+    "Parsania C (", year, "). ",
     meta[["Package"]], ": ", meta[["Title"]], ". ",
     "R package version ", meta[["Version"]], "."
   )
