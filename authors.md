@@ -2,7 +2,7 @@
 
 ## Authors
 
-- **Chirag Patel**. Author, maintainer.
+- **Chirag Parsania**. Author, maintainer.
 
 ## Citation
 
