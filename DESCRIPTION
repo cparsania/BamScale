@@ -5,17 +5,17 @@ Version: 0.1.0
 Authors@R: c(
     person("Chirag", "Parsania", email = "chirag.parsania@gmail.com", role = c("aut", "cre"))
   )
-Author: Chirag Parsania [aut, cre]
-Maintainer: Chirag Parsania <chirag.parsania@gmail.com>
 Description: Multithreaded sequential BAM processing built on top of the
     ompBAM C++ engine. BamScale provides user-friendly BAM read and scan
     interfaces designed for compatibility with existing Bioconductor workflows.
 License: MIT + file LICENSE
+biocViews: Software, DataImport, Sequencing, Coverage, Alignment, QualityControl
 Encoding: UTF-8
 LazyData: false
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
+    BiocGenerics,
     methods,
     Rcpp
 LinkingTo:
@@ -43,3 +43,4 @@ Config/testthat/edition: 3
 SystemRequirements: C++17, OpenMP
 NeedsCompilation: yes
 URL: https://cparsania.github.io/BamScale/
+BugReports: https://github.com/cparsania/BamScale/issues

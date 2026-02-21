@@ -1,0 +1,324 @@
+---
+title: "BamScale vs Rsamtools Output Reproducibility"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{BamScale vs Rsamtools Output Reproducibility}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 8,
+  fig.height = 4.5
+)
+
+required_pkgs <- c("BamScale", "Rsamtools", "ompBAM")
+can_run <- all(vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE))
+```
+
+```{r table-style, echo = FALSE, results = 'asis'}
+cat(
+  '<style>
+',
+  '.repro-scroll {
+',
+  '  width: 100%;
+',
+  '  overflow-x: auto;
+',
+  '  margin: 0 0 1em 0;
+',
+  '}
+
+',
+  '.repro-scroll table.repro-table {
+',
+  '  width: max-content;
+',
+  '  min-width: 100%;
+',
+  '  table-layout: auto;
+',
+  '  font-size: 85%;
+',
+  '  margin-bottom: 0;
+',
+  '}
+
+',
+  '.repro-scroll table.repro-table th,
+',
+  '.repro-scroll table.repro-table td {
+',
+  '  white-space: nowrap;
+',
+  '}
+',
+  '</style>
+',
+  sep = ''
+)
+```
+
+## Purpose
+
+This vignette checks reproducibility by comparing **BamScale** and **Rsamtools** outputs on the same BAM input.
+
+-   `step1` fields: `qname, flag, rname, pos, mapq, cigar`
+-   `seq+qual` fields: `qname, seq, qual`
+
+To keep the comparison deterministic and fair, both tools are run in single-thread mode for this check.
+
+```{r prereq-message, echo = FALSE}
+if (!can_run) {
+  cat(
+    "This vignette requires packages: ",
+    paste(required_pkgs, collapse = ", "),
+    "\nInstall missing packages, then re-render to execute comparisons.\n",
+    sep = ""
+  )
+}
+```
+
+## Input BAM
+
+```{r bam-input, eval = can_run}
+bam <- ompBAM::example_BAM("Unsorted")
+
+cat("BAM:", bam, "\n")
+cat("Exists:", file.exists(bam), "\n")
+cat("Size (MB):", round(file.size(bam) / 1024^2, 3), "\n")
+```
+
+## Helper Functions
+
+```{r helpers, eval = can_run}
+scanbam_to_df <- function(scan_rec, fields) {
+  cols <- vector("list", length(fields))
+  names(cols) <- fields
+
+  lens <- integer(length(fields))
+
+  for (i in seq_along(fields)) {
+    nm <- fields[[i]]
+    v <- scan_rec[[nm]]
+
+    if (is.null(v)) {
+      next
+    }
+
+    if (nm %in% c("seq", "qual", "rname")) {
+      v <- as.character(v)
+    }
+
+    cols[[i]] <- v
+    lens[[i]] <- length(v)
+  }
+
+  n <- if (any(lens > 0L)) max(lens) else 0L
+
+  for (i in seq_along(fields)) {
+    if (is.null(cols[[i]])) {
+      cols[[i]] <- rep(NA, n)
+    } else if (length(cols[[i]]) != n) {
+      if (length(cols[[i]]) == 1L && n > 1L) {
+        cols[[i]] <- rep(cols[[i]], n)
+      } else {
+        stop("Inconsistent field lengths in Rsamtools output for field: ", fields[[i]], call. = FALSE)
+      }
+    }
+  }
+
+  as.data.frame(cols, stringsAsFactors = FALSE)
+}
+
+normalize_df <- function(df) {
+  out <- as.data.frame(df, stringsAsFactors = FALSE)
+
+  for (nm in names(out)) {
+    if (is.factor(out[[nm]])) out[[nm]] <- as.character(out[[nm]])
+    if (is.integer(out[[nm]]) || is.numeric(out[[nm]])) {
+      suppressWarnings(out[[nm]] <- as.integer(out[[nm]]))
+    } else {
+      out[[nm]] <- as.character(out[[nm]])
+    }
+  }
+
+  out
+}
+
+compare_fields <- function(a, b, fields) {
+  stopifnot(all(fields %in% names(a)), all(fields %in% names(b)))
+
+  n <- min(nrow(a), nrow(b))
+  if (n == 0L) {
+    return(data.frame(
+      field = fields,
+      identical = NA,
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  aa <- a[seq_len(n), fields, drop = FALSE]
+  bb <- b[seq_len(n), fields, drop = FALSE]
+
+  data.frame(
+    field = fields,
+    identical = vapply(fields, function(f) identical(aa[[f]], bb[[f]]), logical(1)),
+    stringsAsFactors = FALSE
+  )
+}
+
+
+preview_pair <- function(bs_df, rs_df, fields, n = 5L) {
+  n <- min(as.integer(n), nrow(bs_df), nrow(rs_df))
+  if (n <= 0L) {
+    return(data.frame())
+  }
+
+  bs_preview <- bs_df[seq_len(n), fields, drop = FALSE]
+  rs_preview <- rs_df[seq_len(n), fields, drop = FALSE]
+
+  bs_preview$tool <- "BamScale"
+  rs_preview$tool <- "Rsamtools"
+  bs_preview$row_id <- seq_len(n)
+  rs_preview$row_id <- seq_len(n)
+
+  out <- rbind(bs_preview, rs_preview)
+  out <- out[, c("row_id", "tool", fields), drop = FALSE]
+  out
+}
+
+kable_fit <- function(x) {
+  tbl <- knitr::kable(
+    x,
+    format = "html",
+    table.attr = 'class="repro-table"'
+  )
+  knitr::asis_output(paste0('<div class="repro-scroll">', tbl, '</div>'))
+}
+```
+
+## Step1 Output Comparison
+
+```{r step1-compare, eval = can_run}
+fields_step1 <- c("qname", "flag", "rname", "pos", "mapq", "cigar")
+
+bs_step1 <- BamScale::bam_read(
+  file = bam,
+  what = fields_step1,
+  as = "data.frame",
+  include_unmapped = TRUE,
+  threads = 1L,
+  auto_threads = FALSE
+)
+
+rs_step1 <- Rsamtools::scanBam(
+  bam,
+  param = Rsamtools::ScanBamParam(what = fields_step1)
+)[[1]]
+
+bs_step1_df <- normalize_df(bs_step1)
+rs_step1_df <- normalize_df(scanbam_to_df(rs_step1, fields_step1))
+
+step1_cmp <- compare_fields(bs_step1_df, rs_step1_df, fields_step1)
+
+summary_step1 <- data.frame(
+  rows_bamscale = nrow(bs_step1_df),
+  rows_rsamtools = nrow(rs_step1_df),
+  rows_compared = min(nrow(bs_step1_df), nrow(rs_step1_df)),
+  all_fields_identical = all(step1_cmp$identical),
+  stringsAsFactors = FALSE
+)
+
+kable_fit(summary_step1)
+kable_fit(step1_cmp)
+
+cat("\nQuick output preview (first matched rows):\n")
+kable_fit(preview_pair(bs_step1_df, rs_step1_df, fields_step1, n = 5L))
+```
+
+## Seq + Qual Output Comparison
+
+```{r seqqual-compare, eval = can_run}
+fields_seqqual <- c("qname", "seq", "qual")
+
+bs_sq <- BamScale::bam_read(
+  file = bam,
+  what = fields_seqqual,
+  as = "data.frame",
+  seqqual_mode = "compatible",
+  include_unmapped = TRUE,
+  threads = 1L,
+  auto_threads = FALSE
+)
+
+rs_sq <- Rsamtools::scanBam(
+  bam,
+  param = Rsamtools::ScanBamParam(what = fields_seqqual)
+)[[1]]
+
+bs_sq_df <- normalize_df(bs_sq)
+rs_sq_df <- normalize_df(scanbam_to_df(rs_sq, fields_seqqual))
+
+seqqual_cmp <- compare_fields(bs_sq_df, rs_sq_df, fields_seqqual)
+
+summary_sq <- data.frame(
+  rows_bamscale = nrow(bs_sq_df),
+  rows_rsamtools = nrow(rs_sq_df),
+  rows_compared = min(nrow(bs_sq_df), nrow(rs_sq_df)),
+  all_fields_identical = all(seqqual_cmp$identical),
+  stringsAsFactors = FALSE
+)
+
+kable_fit(summary_sq)
+kable_fit(seqqual_cmp)
+
+cat("\nQuick output preview (first matched rows):\n")
+kable_fit(preview_pair(
+  bs_sq_df,
+  rs_sq_df,
+  fields_seqqual,
+  n = 5L
+))
+```
+
+## Reproducibility Summary
+
+```{r reproducibility-summary, eval = can_run}
+repro_tbl <- rbind(
+  data.frame(
+    workload = "step1",
+    rows_bamscale = nrow(bs_step1_df),
+    rows_rsamtools = nrow(rs_step1_df),
+    rows_compared = min(nrow(bs_step1_df), nrow(rs_step1_df)),
+    all_fields_identical = all(step1_cmp$identical),
+    stringsAsFactors = FALSE
+  ),
+  data.frame(
+    workload = "seqqual",
+    rows_bamscale = nrow(bs_sq_df),
+    rows_rsamtools = nrow(rs_sq_df),
+    rows_compared = min(nrow(bs_sq_df), nrow(rs_sq_df)),
+    all_fields_identical = all(seqqual_cmp$identical),
+    stringsAsFactors = FALSE
+  )
+)
+
+kable_fit(repro_tbl)
+```
+
+## Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+## Notes
+
+-   Equality here is reported at the field level over rows compared in order.
+-   If row counts differ, inspect filtering assumptions (`flag`, `include_unmapped`, `which`, etc.) first.
+-   For performance benchmarking, keep this output check separate from timing runs.
