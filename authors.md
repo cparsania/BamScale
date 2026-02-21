@@ -6,6 +6,9 @@
 
 ## Citation
 
+Source:
+[`inst/CITATION`](https://github.com/cparsania/BamScale/blob/main/inst/CITATION)
+
 Parsania C (2026). BamScale: Bioconductor-Friendly Multithreaded BAM
 Processing. R package version 0.1.0.
 

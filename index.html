@@ -32,11 +32,18 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
+<li class="nav-item dropdown">
+  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
+<li><a class="dropdown-item" href="articles/output-comparison.html">BamScale vs Rsamtools Output Reproducibility</a></li>
+  </ul>
+</li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json">
 </form></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/cparsania/BamScale/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -45,99 +52,36 @@
 </nav><div class="container template-home">
 <div class="row">
   <main id="main" class="col-md-9"><div class="section level1">
-<div class="page-header"><h1 id="bamscale-">BamScale <img src="reference/figures/BamScale-logo.png" align="right" height="240"><a class="anchor" aria-label="anchor" href="#bamscale-"></a>
+<div class="page-header"><h1 id="bamscale">BamScale<a class="anchor" aria-label="anchor" href="#bamscale"></a>
 </h1></div>
-<p><a href="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="inst/benchmarks/"><img src="https://img.shields.io/badge/Benchmarks-Quarto-blue" alt="Benchmark Report"></a> <a href="https://app.codecov.io/" class="external-link"><img src="https://img.shields.io/badge/Coverage-Codecov-lightgrey" alt="codecov"></a> <a href="https://bioconductor.org/" class="external-link"><img src="https://img.shields.io/badge/Bioconductor-targeted-green" alt="Bioconductor"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></p>
-<p>BamScale is a Bioconductor-friendly, multithreaded BAM processing package for R built on top of the <code>ompBAM</code> C++ engine.</p>
-<p>It is designed for users who want <code>scanBam</code>/<code>readGAlignments</code>-style ergonomics with explicit control of modern CPU parallelism.</p>
+<p><img src="reference/figures/BamScale-logo.png" align="right" height="170" alt="BamScale logo"></p>
+<p><a href="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml" class="external-link"><img src="https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg" alt="pkgdown"></a> <a href="https://bioconductor.org/" class="external-link"><img src="https://img.shields.io/badge/Bioconductor-submission_in_progress-orange" alt="Bioconductor"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></p>
+<p>BamScale is a multithreaded BAM processing package for R built on top of the <code>ompBAM</code> C++ engine. It is designed for Bioconductor users who need high-throughput BAM parsing while preserving familiar <code>scanBam</code>/<code>readGAlignments</code>-style workflows.</p>
 <div class="section level2">
-<h2 id="why-bamscale">Why BamScale?<a class="anchor" aria-label="anchor" href="#why-bamscale"></a>
+<h2 id="why-bamscale-in-bioconductor-workflows">Why BamScale in Bioconductor Workflows?<a class="anchor" aria-label="anchor" href="#why-bamscale-in-bioconductor-workflows"></a>
 </h2>
-<p>BAM analysis pipelines in R often face two practical constraints:</p>
+<p>BamScale focuses on three goals:</p>
 <ul>
-<li>high per-file latency for large BAMs when using single-thread readers,</li>
-<li>workflow friction when switching between fast low-level tools and Bioconductor-native data structures.</li>
+<li>speed on modern multi-core systems,</li>
+<li>compatibility with common Bioconductor input/output contracts,</li>
+<li>transparent benchmarking and reproducibility.</li>
 </ul>
-<p>BamScale addresses both by combining:</p>
+<p>Key capabilities:</p>
 <ul>
-<li>an OpenMP-enabled C++ backend (<code>ompBAM</code>),</li>
-<li>a Bioconductor-compatible R interface (<code>file</code>, <code>param</code>, <code>what</code>, <code>tag</code>, <code>BPPARAM</code>),</li>
-<li>direct output modes for downstream ecosystem interoperability.</li>
-</ul>
-</div>
-<div class="section level2">
-<h2 id="ompbam-vs-bamscale">ompBAM vs BamScale<a class="anchor" aria-label="anchor" href="#ompbam-vs-bamscale"></a>
-</h2>
-<p><code>ompBAM</code> and BamScale are complementary layers.</p>
+<li>OpenMP-enabled per-file parallelism via <code>threads</code>,</li>
+<li>optional multi-file parallelism via <code>BiocParallel</code> (<code>BPPARAM</code>),</li>
+<li>
+<code>ScanBamParam</code>-like filtering (<code>mapqFilter</code>, <code>flag</code>, <code>which</code>, <code>what</code>, <code>tag</code>),</li>
+<li>multiple output modes:
 <ul>
 <li>
-<code>ompBAM</code> provides the high-performance C++ BAM decode/scan core.</li>
-<li>BamScale provides the user-facing R contract for Bioconductor workflows.</li>
-</ul>
-<div class="section level3">
-<h3 id="what-ompbam-already-solves">What ompBAM already solves<a class="anchor" aria-label="anchor" href="#what-ompbam-already-solves"></a>
-</h3>
-<ul>
-<li>fast sequential BAM parsing and decompression in C++,</li>
-<li>thread-level parallelism via OpenMP,</li>
-<li>low-level access to alignment fields.</li>
-</ul>
-</div>
-<div class="section level3">
-<h3 id="what-bamscale-adds">What BamScale adds<a class="anchor" aria-label="anchor" href="#what-bamscale-adds"></a>
-</h3>
-<ul>
-<li>Bioconductor-style API:
-<ul>
+<code>data.frame</code> and <code><a href="https://rdrr.io/pkg/S4Vectors/man/DataFrame-class.html" class="external-link">S4Vectors::DataFrame</a></code>,</li>
 <li>
-<code><a href="reference/bam_read.html">bam_read()</a></code> for read extraction,</li>
+<code><a href="https://rdrr.io/pkg/GenomicAlignments/man/GAlignments-class.html" class="external-link">GenomicAlignments::GAlignments</a></code>,</li>
 <li>
-<code><a href="reference/bam_count.html">bam_count()</a></code> for chromosome-level counting,</li>
-</ul>
-</li>
-<li>compatibility with <code>ScanBamParam</code> semantics (<code>mapqFilter</code>, <code>flag</code>, <code>which</code>, <code>what</code>, <code>tag</code>),</li>
-<li>output modes tailored to R users:
-<ul>
+<code><a href="https://rdrr.io/pkg/GenomicAlignments/man/GAlignmentPairs-class.html" class="external-link">GenomicAlignments::GAlignmentPairs</a></code>,</li>
 <li>
-<code>data.frame</code>, <code><a href="https://rdrr.io/pkg/S4Vectors/man/DataFrame-class.html" class="external-link">S4Vectors::DataFrame</a></code>,</li>
-<li>
-<code><a href="https://rdrr.io/pkg/GenomicAlignments/man/GAlignments-class.html" class="external-link">GenomicAlignments::GAlignments</a></code>, <code><a href="https://rdrr.io/pkg/GenomicAlignments/man/GAlignmentPairs-class.html" class="external-link">GenomicAlignments::GAlignmentPairs</a></code>,</li>
-<li>scan-like <code>list</code> output (<code>as = "scanBam"</code>),</li>
-</ul>
-</li>
-<li>nested parallelism control (<code>threads</code>, <code>BPPARAM</code>, <code>auto_threads</code>) with cpuset-aware thread capping,</li>
-<li>reproducible benchmark framework with strict <code>fair</code> vs <code>optimized</code> tracks.</li>
-</ul>
-</div>
-</div>
-<div class="section level2">
-<h2 id="main-functions">Main Functions<a class="anchor" aria-label="anchor" href="#main-functions"></a>
-</h2>
-<ul>
-<li>
-<code><a href="reference/bam_read.html">bam_read()</a></code>
-<ul>
-<li>Inputs: <code>character</code>, <code><a href="https://rdrr.io/pkg/Rsamtools/man/BamFile-class.html" class="external-link">Rsamtools::BamFile</a></code>, <code><a href="https://rdrr.io/pkg/Rsamtools/man/BamFile-class.html" class="external-link">Rsamtools::BamFileList</a></code>
-</li>
-<li>Supported fields: <code>qname</code>, <code>flag</code>, <code>rname</code>, <code>strand</code>, <code>pos</code>, <code>qwidth</code>, <code>mapq</code>, <code>cigar</code>, <code>mrnm</code>, <code>mpos</code>, <code>isize</code>, <code>seq</code>, <code>qual</code>
-</li>
-<li>Output modes: <code>"DataFrame"</code>, <code>"data.frame"</code>, <code>"GAlignments"</code>, <code>"GAlignmentPairs"</code>, <code>"scanBam"</code>
-</li>
-<li>
-<code>seqqual_mode</code>:
-<ul>
-<li>
-<code>"compatible"</code> (default): character seq/qual for Bioconductor compatibility</li>
-<li>
-<code>"compact"</code>: raw list-columns for high-throughput seq/qual extraction</li>
-</ul>
-</li>
-</ul>
-</li>
-<li>
-<code><a href="reference/bam_count.html">bam_count()</a></code>
-<ul>
-<li>fast chromosome-level counts with the same filtering semantics (<code>mapqFilter</code>, <code>flag</code>, <code>which</code>)</li>
+<code>scanBam</code>-shaped list output (<code>as = "scanBam"</code>).</li>
 </ul>
 </li>
 </ul>
@@ -145,32 +89,53 @@
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
-<p>BamScale requires:</p>
+<div class="section level3">
+<h3 id="prerequisites">Prerequisites<a class="anchor" aria-label="anchor" href="#prerequisites"></a>
+</h3>
 <ul>
-<li>R with C++17 toolchain,</li>
-<li>OpenMP-capable compiler/runtime,</li>
+<li>R with a C++17 toolchain</li>
+<li>OpenMP-capable compiler/runtime</li>
 <li>
-<code>ompBAM</code> installed and discoverable by R.</li>
+<code>ompBAM</code> available in your R library</li>
 </ul>
-<p>Install from source (inside this repository):</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="ex">R</span> CMD INSTALL .</span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="current-install-route-pre-bioconductor-release">Current install route (pre-Bioconductor release)<a class="anchor" aria-label="anchor" href="#current-install-route-pre-bioconductor-release"></a>
+</h3>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"BiocManager"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"BiocManager"</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu">BiocManager</span><span class="fu">::</span><span class="fu"><a href="https://bioconductor.github.io/BiocManager/reference/install.html" class="external-link">install</a></span><span class="op">(</span><span class="st">"ompBAM"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"remotes"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"remotes"</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"cparsania/BamScale"</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="after-bioconductor-acceptance">After Bioconductor acceptance<a class="anchor" aria-label="anchor" href="#after-bioconductor-acceptance"></a>
+</h3>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">BiocManager</span><span class="fu">::</span><span class="fu"><a href="https://bioconductor.github.io/BiocManager/reference/install.html" class="external-link">install</a></span><span class="op">(</span><span class="st">"BamScale"</span><span class="op">)</span></span></code></pre></div>
+</div>
 </div>
 <div class="section level2">
 <h2 id="quick-start">Quick Start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://cparsania.github.io/BamScale/">BamScale</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">bam</span> <span class="op">&lt;-</span> <span class="fu">ompBAM</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/ompBAM/man/example_BAM.html" class="external-link">example_BAM</a></span><span class="op">(</span><span class="st">"Unsorted"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 1) Bioconductor-familiar extraction</span></span>
+<span><span class="co"># 1) Step1-style extraction</span></span>
 <span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_read.html">bam_read</a></span><span class="op">(</span></span>
 <span>  file <span class="op">=</span> <span class="va">bam</span>,</span>
 <span>  what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"flag"</span>, <span class="st">"rname"</span>, <span class="st">"pos"</span>, <span class="st">"mapq"</span>, <span class="st">"cigar"</span><span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="fl">4</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 2) Seq/qual extraction (default compatible mode)</span></span>
+<span><span class="co"># 2) Seq/qual in comparator-compatible mode</span></span>
 <span><span class="va">sq</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_read.html">bam_read</a></span><span class="op">(</span></span>
 <span>  file <span class="op">=</span> <span class="va">bam</span>,</span>
 <span>  what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"seq"</span>, <span class="st">"qual"</span><span class="op">)</span>,</span>
@@ -179,87 +144,122 @@
 <span>  threads <span class="op">=</span> <span class="fl">4</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 3) High-throughput compact seq/qual path</span></span>
-<span><span class="va">sq_compact</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_read.html">bam_read</a></span><span class="op">(</span></span>
-<span>  file <span class="op">=</span> <span class="va">bam</span>,</span>
-<span>  what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"seq"</span>, <span class="st">"qual"</span><span class="op">)</span>,</span>
-<span>  as <span class="op">=</span> <span class="st">"data.frame"</span>,</span>
-<span>  seqqual_mode <span class="op">=</span> <span class="st">"compact"</span>,</span>
-<span>  threads <span class="op">=</span> <span class="fl">4</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># 4) scanBam-shaped output</span></span>
-<span><span class="va">scan_like</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_read.html">bam_read</a></span><span class="op">(</span></span>
-<span>  file <span class="op">=</span> <span class="va">bam</span>,</span>
-<span>  what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"flag"</span><span class="op">)</span>,</span>
-<span>  tag <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"NM"</span><span class="op">)</span>,</span>
-<span>  as <span class="op">=</span> <span class="st">"scanBam"</span>,</span>
-<span>  threads <span class="op">=</span> <span class="fl">4</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># 5) Fast count summary</span></span>
-<span><span class="va">counts</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_count.html">bam_count</a></span><span class="op">(</span>file <span class="op">=</span> <span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co"># 3) Fast chromosome-level counts</span></span>
+<span><span class="va">cnt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_count.html">bam_count</a></span><span class="op">(</span>file <span class="op">=</span> <span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="parallelism-model">Parallelism Model<a class="anchor" aria-label="anchor" href="#parallelism-model"></a>
 </h2>
-<p>BamScale supports two parallel axes:</p>
+<p>BamScale can parallelize on two axes:</p>
 <ul>
-<li>across files: <code>BPPARAM</code> workers,</li>
-<li>within file: OpenMP <code>threads</code>.</li>
+<li>across files via <code>BPPARAM</code> workers,</li>
+<li>within each file via OpenMP <code>threads</code>.</li>
 </ul>
-<p>Approximate total concurrency:</p>
-<p><code>min(length(file), BiocParallel::bpnworkers(BPPARAM)) * threads</code></p>
-<p>If <code>auto_threads = TRUE</code>, per-file OpenMP threads are capped to reduce oversubscription under multi-worker runs.</p>
+<p>Approximate effective concurrency:</p>
+<p><code>min(length(file), bpnworkers(BPPARAM)) * threads</code></p>
+<p>When <code>auto_threads = TRUE</code>, BamScale can cap per-file threads under multi-worker execution to reduce oversubscription.</p>
 </div>
 <div class="section level2">
-<h2 id="benchmarking-and-reproducibility">Benchmarking and Reproducibility<a class="anchor" aria-label="anchor" href="#benchmarking-and-reproducibility"></a>
+<h2 id="reproducibility-and-output-equivalence">Reproducibility and Output Equivalence<a class="anchor" aria-label="anchor" href="#reproducibility-and-output-equivalence"></a>
 </h2>
-<p>Benchmark assets live under <code>inst/benchmarks/</code>.</p>
+<p>A dedicated vignette validates output comparability with Rsamtools:</p>
 <ul>
-<li>Runner: <code>inst/benchmarks/run_server_benchmark.R</code>
-</li>
-<li>Report: <code>inst/benchmarks/benchmark_report.qmd</code>
-</li>
-<li>Protocol: <code>inst/benchmarks/README.md</code>
-</li>
+<li><code>vignettes/output-comparison.Rmd</code></li>
+<li>compares <code>step1</code> fields and <code>seq+qual</code> fields in compatible mode</li>
 </ul>
-<p>The benchmark framework separates:</p>
-<ul>
-<li>
-<code>fair</code> track: strict BamScale vs comparator comparison (<code>Rsamtools</code>, <code>GenomicAlignments</code>),</li>
-<li>
-<code>optimized</code> track: BamScale-only optimized configurations (for example compact <code>seq/qual</code>).</li>
-</ul>
-<p>This prevents mixing optimization-only paths into cross-package claims.</p>
+<p>Render locally:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">rmarkdown</span><span class="fu">::</span><span class="fu"><a href="https://pkgs.rstudio.com/rmarkdown/reference/render.html" class="external-link">render</a></span><span class="op">(</span><span class="st">"vignettes/output-comparison.Rmd"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="current-limitations-transparent">Current Limitations (Transparent)<a class="anchor" aria-label="anchor" href="#current-limitations-transparent"></a>
+<h2 id="benchmarking">Benchmarking<a class="anchor" aria-label="anchor" href="#benchmarking"></a>
+</h2>
+<p>Benchmark assets are in <code>inst/benchmarks/</code>:</p>
+<ul>
+<li>runner: <code>inst/benchmarks/run_server_benchmark.R</code>
+</li>
+<li>report: <code>inst/benchmarks/benchmark_report.qmd</code>
+</li>
+<li>protocol: <code>inst/benchmarks/README.md</code>
+</li>
+</ul>
+<p>The benchmark design separates two tracks:</p>
+<ul>
+<li>
+<code>fair</code>: cross-package comparisons (BamScale vs Rsamtools/GenomicAlignments)</li>
+<li>
+<code>optimized</code>: BamScale-only optimizations (for example compact <code>seq/qual</code>)</li>
+</ul>
+<p>This separation is intentional and avoids mixing optimization-only paths into cross-package claims.</p>
+</div>
+<div class="section level2">
+<h2 id="interpreting-worker-vs-thread-scaling">Interpreting Worker vs Thread Scaling<a class="anchor" aria-label="anchor" href="#interpreting-worker-vs-thread-scaling"></a>
+</h2>
+<p>More workers do not always mean faster runtime at fixed total CPU budget.</p>
+<p>For multi-file BAM workloads, performance can drop when workers increase and per-worker threads shrink because of:</p>
+<ul>
+<li>worker/process overhead,</li>
+<li>memory and serialization pressure,</li>
+<li>shared storage bandwidth contention.</li>
+</ul>
+<p>This behavior is not unique to BamScale and can appear with Rsamtools/GenomicAlignments multi-process patterns as well. Benchmark reporting should always state worker/thread allocation explicitly.</p>
+</div>
+<div class="section level2">
+<h2 id="current-limitations">Current Limitations<a class="anchor" aria-label="anchor" href="#current-limitations"></a>
 </h2>
 <ul>
 <li>
-<code>param$which</code> is implemented as sequential filtering, not indexed random-access jumps.</li>
+<code>param$which</code> is currently implemented as sequential filtering rather than indexed random-access jumps.</li>
 <li>
-<code>seqqual_mode = "compact"</code> is currently supported for <code>as = "data.frame"</code> and <code>as = "DataFrame"</code>.</li>
+<code>seqqual_mode = "compact"</code> is optimization-oriented and not intended for strict cross-package output-equivalence comparisons.</li>
 <li>
-<code>GAlignments</code> / <code>GAlignmentPairs</code> outputs drop unmapped records by design.</li>
-<li>Multi-file performance does not necessarily improve monotonically with more workers.
-<ul>
-<li>At fixed total thread budget, higher worker counts can lose to lower worker counts because of process overhead, serialization, memory pressure, and storage contention.</li>
-</ul>
-</li>
-<li>Observed speedups are workload-, storage-, and hardware-dependent.</li>
+<code>GAlignments</code> and <code>GAlignmentPairs</code> outputs exclude unmapped records by design.</li>
 </ul>
 </div>
 <div class="section level2">
-<h2 id="what-has-been-improved-recently">What Has Been Improved Recently<a class="anchor" aria-label="anchor" href="#what-has-been-improved-recently"></a>
+<h2 id="community-and-support">Community and Support<a class="anchor" aria-label="anchor" href="#community-and-support"></a>
 </h2>
 <ul>
-<li>Added compact seq/qual extraction path for lower-overhead high-throughput runs.</li>
-<li>Optimized core C++ hot paths (decode/merge/allocation behavior).</li>
-<li>Added cpuset-aware core detection for more reliable thread budgeting in container/HPC environments.</li>
-<li>Redesigned benchmark workflow/report to make <code>fair</code> vs <code>optimized</code> interpretation explicit.</li>
+<li>Bioconductor support site (recommended for user-facing questions):
+<ul>
+<li><a href="https://support.bioconductor.org" class="external-link uri">https://support.bioconductor.org</a></li>
 </ul>
+</li>
+<li>Development issues and feature requests:
+<ul>
+<li><a href="https://github.com/cparsania/BamScale/issues" class="external-link uri">https://github.com/cparsania/BamScale/issues</a></li>
+</ul>
+</li>
+</ul>
+<p>When posting performance reports, include:</p>
+<ul>
+<li>package versions,</li>
+<li>hardware/storage context,</li>
+<li>exact benchmark command and profile,</li>
+<li>
+<code>threads</code>/<code>BPPARAM</code> settings.</li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
+</h2>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/citation.html" class="external-link">citation</a></span><span class="op">(</span><span class="st">"BamScale"</span><span class="op">)</span></span></code></pre></div>
+<p>If BamScale contributes to performance claims, please also cite <code>ompBAM</code>.</p>
+</div>
+<div class="section level2">
+<h2 id="contributing">Contributing<a class="anchor" aria-label="anchor" href="#contributing"></a>
+</h2>
+<p>Pull requests are welcome. Please include:</p>
+<ul>
+<li>a short motivation,</li>
+<li>tests for behavior changes,</li>
+<li>benchmark evidence for performance claims.</li>
+</ul>
+<p>Before opening a PR, run:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="ex">R</span> CMD build .</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="ex">R</span> CMD check <span class="at">--as-cran</span> BamScale_<span class="pp">*</span>.tar.gz</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">"BiocCheck::BiocCheck('.')"</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="license">License<a class="anchor" aria-label="anchor" href="#license"></a>
@@ -267,7 +267,15 @@
 <p>MIT (<code>LICENSE</code>).</p>
 </div>
 </div>
-  </main><aside class="col-md-3"><div class="license">
+  </main><aside class="col-md-3"><div class="links">
+<h2 data-toc-skip>Links</h2>
+<ul class="list-unstyled">
+<li><a href="https://github.com/cparsania/BamScale/" class="external-link">Browse source code</a></li>
+<li><a href="https://github.com/cparsania/BamScale/issues" class="external-link">Report a bug</a></li>
+</ul>
+</div>
+
+<div class="license">
 <h2 data-toc-skip>License</h2>
 <ul class="list-unstyled">
 <li>
