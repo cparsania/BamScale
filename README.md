@@ -1,6 +1,5 @@
-# BamScale
 
-<img src="man/figures/BamScale-logo.png" align="right" height="180" alt="BamScale logo" />
+# BamScale <img src="man/figures/BamScale-logo.png" align="right" height="240"/>
 
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
 [![Benchmark Report](https://img.shields.io/badge/Benchmarks-Quarto-blue)](inst/benchmarks/)
