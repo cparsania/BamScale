@@ -1,6 +1,4 @@
-# BamScale
-
-![BamScale logo](reference/figures/BamScale-logo.png)
+# BamScale ![](reference/figures/BamScale-logo.png)
 
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
 [![Benchmark
