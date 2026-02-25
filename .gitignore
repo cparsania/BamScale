@@ -38,6 +38,10 @@ vignettes/*.nb.html
 # Benchmark outputs
 benchmark_results/
 inst/benchmarks/benchmark_results/
+inst/benchmarks/bamscale_intro_presentation.qmd
+inst/benchmarks/bamscale_intro_presentation.pptx
+inst/benchmarks/benchmark_report_files
+inst/benchmarks/benchmark_report.html
 
 # Quarto local cache
 .quarto/
