@@ -62,3 +62,4 @@ vignettes/benchmarking_files/
 vignettes/.quarto/
 docs
 inst/benchmarks/bamscale_intro_presentation_edits.pptx
+BamScale.BiocCheck/00BiocCheck.log
