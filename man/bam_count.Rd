@@ -24,8 +24,9 @@ bam_count(
 \item{BPPARAM}{Optional \code{BiocParallel} parameter for multi-file operation.}
 
 \item{auto_threads}{Logical; when \code{TRUE} and \code{BPPARAM} has multiple workers,
-BamScale automatically caps per-file OpenMP threads to avoid
-oversubscription.}
+BamScale adaptively avoids oversubscription by preserving higher
+per-file OpenMP thread counts when possible and reducing the number of
+concurrently active file workers before shrinking per-file threads.}
 
 \item{include_unmapped}{Whether to include an extra \code{*} row for unmapped
 records.}
@@ -41,10 +42,10 @@ filtering fields from \code{ScanBamParam} (\code{mapqFilter}, \code{flag}, and \
 \details{
 Parallelism behavior matches \code{bam_read()}: \code{BPPARAM} distributes work across
 BAM files, while \code{threads} controls OpenMP work within each file. If
-\code{auto_threads = TRUE} and \code{BPPARAM} has multiple workers, per-file OpenMP
-threads are capped using
-\code{max(1, min(threads, floor(available_cores / workers_eff)))}, where
-\code{workers_eff = min(length(file), BiocParallel::bpnworkers(BPPARAM))}.
+\code{auto_threads = TRUE} and \code{BPPARAM} has multiple workers, BamScale first
+limits the number of concurrently active workers to preserve the requested
+per-file thread count within the detected core budget, then caps per-file
+OpenMP threads only if a single file would still oversubscribe the machine.
 }
 \examples{
 if (requireNamespace("ompBAM", quietly = TRUE)) {

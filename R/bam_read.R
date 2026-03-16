@@ -59,8 +59,9 @@
 #' @param BPPARAM Optional `BiocParallel` parameter used when `file` contains
 #'   more than one BAM. If `NULL`, files are processed serially.
 #' @param auto_threads Logical; when `TRUE` and `BPPARAM` has multiple workers,
-#'   BamScale automatically caps per-file OpenMP threads to avoid
-#'   oversubscription.
+#'   BamScale adaptively avoids oversubscription by preserving higher
+#'   per-file OpenMP thread counts when possible and reducing the number of
+#'   concurrently active file workers before shrinking per-file threads.
 #' @param use.names Passed to alignment object conversion. When `TRUE`, read names
 #'   (`qname`) are used as object names.
 #' @param with.which_label Logical; if `TRUE` and `param` includes `which`,
@@ -83,10 +84,11 @@
 #' - `threads` parallelizes within each file via OpenMP.
 #' - Effective total concurrency is approximately
 #'   `min(length(file), BiocParallel::bpnworkers(BPPARAM)) * threads`.
-#' - If `auto_threads = TRUE` and `BPPARAM` has multiple workers, per-file
-#'   OpenMP threads are set to
-#'   `max(1, min(threads, floor(available_cores / workers_eff)))`, where
-#'   `workers_eff = min(length(file), BiocParallel::bpnworkers(BPPARAM))`.
+#' - If `auto_threads = TRUE` and `BPPARAM` has multiple workers, BamScale
+#'   first limits the number of concurrently active workers to preserve the
+#'   requested per-file thread count within the detected core budget, then
+#'   caps per-file OpenMP threads only if a single file would still
+#'   oversubscribe the machine.
 #'
 #' Compatibility notes:
 #' - Region filtering via `param$which` is supported as a sequential filter
@@ -137,12 +139,13 @@ bam_read <- function(
     seqqual_mode <- match.arg(seqqual_mode)
 
     files <- .bamscale_normalize_files(file)
-    threads <- .bamscale_resolve_threads(
+    parallel_plan <- .bamscale_resolve_parallel_plan(
         threads = threads,
         BPPARAM = BPPARAM,
         auto_threads = auto_threads,
         n_files = length(files)
     )
+    threads <- parallel_plan$threads
     parsed <- .bamscale_parse_param(param)
 
     what_final <- what
@@ -172,6 +175,7 @@ bam_read <- function(
 
     split_scan_by_which <- identical(as, "scanBam") && nrow(parsed$which) > 0L
     internal_with_which_label <- isTRUE(with.which_label) || split_scan_by_which
+    internal_include_unmapped <- isTRUE(include_unmapped) && !as %in% c("GAlignments", "GAlignmentPairs")
 
     needed_fields <- unique(what_final)
     if (as %in% c("GAlignments", "GAlignmentPairs")) {
@@ -201,7 +205,7 @@ bam_read <- function(
             path_one,
             threads,
             as.integer(parsed$min_mapq),
-            as.logical(include_unmapped),
+            as.logical(internal_include_unmapped),
             as.logical(include_seq),
             as.logical(include_qual),
             as.logical(compact_seqqual),
@@ -230,12 +234,17 @@ bam_read <- function(
         }
         keep <- intersect(keep, colnames(raw_df))
 
-        out <- raw_df[, keep, drop = FALSE]
+        out <- if (as %in% c("GAlignments", "GAlignmentPairs")) {
+            raw_df
+        } else {
+            .bamscale_select_output_df(raw_df, keep)
+        }
         .bamscale_format_output(
             out,
             raw_df,
             as = as,
             use.names = use.names,
+            selected_names = keep,
             what = what_final,
             tag = tag_final,
             with.which_label = with.which_label,
@@ -244,7 +253,12 @@ bam_read <- function(
         )
     }
 
-    .bamscale_apply_files(files, worker, BPPARAM = BPPARAM)
+    .bamscale_apply_files(
+        files,
+        worker,
+        BPPARAM = BPPARAM,
+        bp_workers = parallel_plan$bp_workers
+    )
 }
 
 #' Count BAM records with Bioconductor-compatible filtering
@@ -258,8 +272,9 @@ bam_read <- function(
 #'   `auto_threads = TRUE`.
 #' @param BPPARAM Optional `BiocParallel` parameter for multi-file operation.
 #' @param auto_threads Logical; when `TRUE` and `BPPARAM` has multiple workers,
-#'   BamScale automatically caps per-file OpenMP threads to avoid
-#'   oversubscription.
+#'   BamScale adaptively avoids oversubscription by preserving higher
+#'   per-file OpenMP thread counts when possible and reducing the number of
+#'   concurrently active file workers before shrinking per-file threads.
 #' @param include_unmapped Whether to include an extra `*` row for unmapped
 #'   records.
 #'
@@ -270,10 +285,10 @@ bam_read <- function(
 #' @details
 #' Parallelism behavior matches `bam_read()`: `BPPARAM` distributes work across
 #' BAM files, while `threads` controls OpenMP work within each file. If
-#' `auto_threads = TRUE` and `BPPARAM` has multiple workers, per-file OpenMP
-#' threads are capped using
-#' `max(1, min(threads, floor(available_cores / workers_eff)))`, where
-#' `workers_eff = min(length(file), BiocParallel::bpnworkers(BPPARAM))`.
+#' `auto_threads = TRUE` and `BPPARAM` has multiple workers, BamScale first
+#' limits the number of concurrently active workers to preserve the requested
+#' per-file thread count within the detected core budget, then caps per-file
+#' OpenMP threads only if a single file would still oversubscribe the machine.
 #'
 #' @examples
 #' if (requireNamespace("ompBAM", quietly = TRUE)) {
@@ -290,12 +305,13 @@ bam_count <- function(
     include_unmapped = TRUE
 ) {
     files <- .bamscale_normalize_files(file)
-    threads <- .bamscale_resolve_threads(
+    parallel_plan <- .bamscale_resolve_parallel_plan(
         threads = threads,
         BPPARAM = BPPARAM,
         auto_threads = auto_threads,
         n_files = length(files)
     )
+    threads <- parallel_plan$threads
     parsed <- .bamscale_parse_param(param)
 
     worker <- function(path_one) {
@@ -313,7 +329,12 @@ bam_count <- function(
         )
     }
 
-    .bamscale_apply_files(files, worker, BPPARAM = BPPARAM)
+    .bamscale_apply_files(
+        files,
+        worker,
+        BPPARAM = BPPARAM,
+        bp_workers = parallel_plan$bp_workers
+    )
 }
 
 
@@ -387,7 +408,7 @@ bam_count <- function(
     workers
 }
 
-.bamscale_resolve_threads <- function(threads, BPPARAM = NULL, auto_threads = FALSE, n_files = 1L) {
+.bamscale_resolve_parallel_plan <- function(threads, BPPARAM = NULL, auto_threads = FALSE, n_files = 1L) {
     threads <- as.integer(threads)
     if (length(threads) != 1L || is.na(threads) || threads < 1L) {
         stop("`threads` must be a positive integer", call. = FALSE)
@@ -402,23 +423,37 @@ bam_count <- function(
         n_files <- 1L
     }
 
-    if (!isTRUE(auto_threads) || is.null(BPPARAM)) {
-        return(threads)
+    if (is.null(BPPARAM)) {
+        return(list(threads = threads, bp_workers = 1L))
+    }
+
+    workers_eff <- min(.bamscale_bpparam_workers(BPPARAM), n_files)
+    if (!isTRUE(auto_threads) || workers_eff <= 1L) {
+        return(list(threads = threads, bp_workers = workers_eff))
     }
 
     if (!requireNamespace("BiocParallel", quietly = TRUE)) {
         stop("`auto_threads = TRUE` with `BPPARAM` requires BiocParallel", call. = FALSE)
     }
 
-    workers <- min(.bamscale_bpparam_workers(BPPARAM), n_files)
-    if (workers <= 1L) {
-        return(threads)
-    }
-
     available_cores <- .bamscale_detect_cores()
-    budget <- max(1L, floor(available_cores / workers))
+    threads_target <- max(1L, min(threads, available_cores))
+    workers_target <- max(1L, min(workers_eff, floor(available_cores / threads_target)))
+    threads_effective <- max(1L, min(threads_target, floor(available_cores / workers_target)))
 
-    as.integer(max(1L, min(threads, budget)))
+    list(
+        threads = as.integer(threads_effective),
+        bp_workers = as.integer(workers_target)
+    )
+}
+
+.bamscale_resolve_threads <- function(threads, BPPARAM = NULL, auto_threads = FALSE, n_files = 1L) {
+    .bamscale_resolve_parallel_plan(
+        threads = threads,
+        BPPARAM = BPPARAM,
+        auto_threads = auto_threads,
+        n_files = n_files
+    )$threads
 }
 
 
@@ -436,12 +471,27 @@ bam_count <- function(
     as.integer(mask)
 }
 
-.bamscale_apply_files <- function(files, FUN, BPPARAM = NULL) {
+.bamscale_apply_files <- function(files, FUN, BPPARAM = NULL, bp_workers = NULL) {
     if (!is.null(BPPARAM)) {
         if (!requireNamespace("BiocParallel", quietly = TRUE)) {
             stop("`BPPARAM` was provided but BiocParallel is not installed", call. = FALSE)
         }
-        out <- BiocParallel::bplapply(files, FUN, BPPARAM = BPPARAM)
+
+        workers_target <- suppressWarnings(as.integer(bp_workers))
+        if (length(workers_target) != 1L || is.na(workers_target) || workers_target < 1L) {
+            workers_target <- .bamscale_bpparam_workers(BPPARAM)
+        }
+
+        if (workers_target <= 1L) {
+            out <- lapply(files, FUN)
+        } else {
+            bp <- BPPARAM
+            current_workers <- .bamscale_bpparam_workers(bp)
+            if (workers_target < current_workers) {
+                BiocParallel::bpworkers(bp) <- workers_target
+            }
+            out <- BiocParallel::bplapply(files, FUN, BPPARAM = bp)
+        }
     } else {
         out <- lapply(files, FUN)
     }
@@ -697,11 +747,50 @@ bam_count <- function(
     df
 }
 
+.bamscale_select_output_df <- function(df, keep) {
+    if (identical(keep, names(df))) {
+        return(df)
+    }
+    df[, keep, drop = FALSE]
+}
+
+.bamscale_build_galignments_seqinfo <- function(seqlevels, raw_df) {
+    if (length(seqlevels) == 0L) {
+        return(methods::slot(GenomicAlignments::GAlignments(), "seqinfo"))
+    }
+
+    strand_levels <- c("+", "-", "*")
+    template <- GenomicAlignments::GAlignments(
+        seqnames = S4Vectors::Rle(factor(character(), levels = seqlevels)),
+        pos = integer(),
+        cigar = character(),
+        strand = S4Vectors::Rle(factor(character(), levels = strand_levels))
+    )
+    methods::slot(template, "seqinfo")
+}
+
+.bamscale_subset_metadata <- function(df, idx, cols) {
+    if (!requireNamespace("S4Vectors", quietly = TRUE)) {
+        stop("`as = 'GAlignments'` requires S4Vectors", call. = FALSE)
+    }
+
+    if (length(cols) == 0L) {
+        return(getFromNamespace("make_zero_col_DFrame", "S4Vectors")(length(idx)))
+    }
+
+    vals <- lapply(cols, function(nm) df[[nm]][idx])
+    names(vals) <- cols
+    out <- do.call(S4Vectors::DataFrame, c(vals, list(check.names = FALSE)))
+    rownames(out) <- NULL
+    out
+}
+
 .bamscale_format_output <- function(
     selected_df,
     raw_df,
     as = "DataFrame",
     use.names = FALSE,
+    selected_names = names(selected_df),
     what = character(),
     tag = character(),
     with.which_label = FALSE,
@@ -721,11 +810,21 @@ bam_count <- function(
     }
 
     if (identical(as, "GAlignments")) {
-        return(.bamscale_as_galignments(selected_df, raw_df, use.names = use.names))
+        return(.bamscale_as_galignments(
+            selected_df,
+            raw_df,
+            use.names = use.names,
+            selected_names = selected_names
+        ))
     }
 
     if (identical(as, "GAlignmentPairs")) {
-        return(.bamscale_as_galignment_pairs(selected_df, raw_df, use.names = use.names))
+        return(.bamscale_as_galignment_pairs(
+            selected_df,
+            raw_df,
+            use.names = use.names,
+            selected_names = selected_names
+        ))
     }
 
     if (identical(as, "scanBam")) {
@@ -843,13 +942,13 @@ bam_count <- function(
     rep(NA, n)
 }
 
-.bamscale_as_galignments <- function(selected_df, raw_df, use.names = FALSE) {
+.bamscale_as_galignments <- function(selected_df, raw_df, use.names = FALSE, selected_names = names(selected_df), row_index = NULL) {
     if (!requireNamespace("GenomicAlignments", quietly = TRUE)) {
         stop("`as = 'GAlignments'` requires GenomicAlignments", call. = FALSE)
     }
 
     required <- c("rname", "pos", "cigar", "strand")
-    if (!all(required %in% names(selected_df))) {
+    if (!all(required %in% selected_names)) {
         stop(
             "`as='GAlignments'` requires fields: ",
             paste(required, collapse = ", "),
@@ -858,60 +957,57 @@ bam_count <- function(
         )
     }
 
-    mapped <- !is.na(selected_df$pos) & selected_df$rname != "*"
-    if (any(!mapped)) {
-        warning("Dropping unmapped records for GAlignments output")
+    idx <- if (is.null(row_index)) {
+        which(!is.na(selected_df$pos) & selected_df$rname != "*")
+    } else {
+        as.integer(row_index)
     }
-    x <- selected_df[mapped, , drop = FALSE]
 
-    if (nrow(x) == 0L) {
+    if (length(idx) == 0L) {
         return(GenomicAlignments::GAlignments())
     }
 
-    extra_cols <- x[, setdiff(names(x), c("rname", "pos", "cigar", "strand")), drop = FALSE]
-
+    selected_names <- intersect(selected_names, names(selected_df))
+    extra_names <- setdiff(selected_names, c("rname", "pos", "cigar", "strand"))
     header_seqnames <- attr(raw_df, "seqnames_header")
+    rname <- as.character(selected_df$rname[idx])
     if (!is.null(header_seqnames)) {
-        seq_factor <- factor(x$rname, levels = as.character(header_seqnames))
+        seqlevels <- as.character(header_seqnames)
     } else {
-        seq_factor <- factor(x$rname)
+        seqlevels <- unique(rname)
     }
+    seq_rle <- S4Vectors::Rle(factor(rname, levels = seqlevels))
 
-    ga_args <- c(
-        list(
-            seqnames = S4Vectors::Rle(seq_factor),
-            pos = as.integer(x$pos),
-            cigar = as.character(x$cigar),
-            strand = as.character(x$strand),
-            names = NULL
-        ),
-        as.list(extra_cols)
+    strand_vals <- as.character(selected_df$strand[idx])
+    strand_vals[is.na(strand_vals) | !nzchar(strand_vals)] <- "*"
+    strand_rle <- S4Vectors::Rle(factor(strand_vals, levels = c("+", "-", "*")))
+
+    ga_args <- list(
+        Class = "GAlignments",
+        seqnames = seq_rle,
+        start = as.integer(selected_df$pos[idx]),
+        cigar = as.character(selected_df$cigar[idx]),
+        strand = strand_rle,
+        NAMES = NULL,
+        seqinfo = .bamscale_build_galignments_seqinfo(seqlevels, raw_df)
     )
-    out <- do.call(GenomicAlignments::GAlignments, ga_args)
+    ga_args$elementMetadata <- .bamscale_subset_metadata(selected_df, idx, extra_names)
+    ga <- do.call(methods::new, ga_args)
 
-    if (isTRUE(use.names) && "qname" %in% names(x)) {
-        names(out) <- as.character(x$qname)
+    if (isTRUE(use.names) && "qname" %in% selected_names) {
+        names(ga) <- as.character(selected_df$qname[idx])
     }
 
-    if (!is.null(attr(raw_df, "seqnames_header")) && !is.null(attr(raw_df, "seqlengths_header")) &&
-        requireNamespace("GenomeInfoDb", quietly = TRUE)) {
-        seqinfo <- GenomeInfoDb::Seqinfo(
-            seqnames = as.character(attr(raw_df, "seqnames_header")),
-            seqlengths = as.integer(attr(raw_df, "seqlengths_header"))
-        )
-        suppressWarnings(GenomeInfoDb::seqinfo(out) <- seqinfo[GenomeInfoDb::seqlevels(out)])
-    }
-
-    out
+    ga
 }
 
-.bamscale_as_galignment_pairs <- function(selected_df, raw_df, use.names = FALSE) {
+.bamscale_as_galignment_pairs <- function(selected_df, raw_df, use.names = FALSE, selected_names = names(selected_df)) {
     if (!requireNamespace("GenomicAlignments", quietly = TRUE)) {
         stop("`as = 'GAlignmentPairs'` requires GenomicAlignments", call. = FALSE)
     }
 
     required <- c("qname", "flag", "rname", "pos", "cigar", "strand")
-    if (!all(required %in% names(selected_df))) {
+    if (!all(required %in% selected_names)) {
         stop(
             "`as='GAlignmentPairs'` requires fields: ",
             paste(required, collapse = ", "),
@@ -929,15 +1025,21 @@ bam_count <- function(
         warning("Dropping non-paired or unmapped records for GAlignmentPairs output")
     }
 
-    x <- selected_df[keep, , drop = FALSE]
-    if (nrow(x) == 0L) {
+    idx_keep <- which(keep)
+    if (length(idx_keep) == 0L) {
         return(GenomicAlignments::GAlignmentPairs())
     }
 
-    ga <- .bamscale_as_galignments(x, raw_df, use.names = FALSE)
+    ga <- .bamscale_as_galignments(
+        selected_df,
+        raw_df,
+        use.names = FALSE,
+        selected_names = selected_names,
+        row_index = idx_keep
+    )
 
-    flag <- as.integer(x$flag)
-    qname <- as.character(x$qname)
+    flag <- as.integer(selected_df$flag[idx_keep])
+    qname <- as.character(selected_df$qname[idx_keep])
     idx_first <- which(bitwAnd(flag, 0x40L) != 0L)
     idx_second <- which(bitwAnd(flag, 0x80L) != 0L)
 

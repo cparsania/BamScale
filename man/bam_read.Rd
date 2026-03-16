@@ -64,8 +64,9 @@ reading/decompression. May be capped when \code{auto_threads = TRUE}.}
 more than one BAM. If \code{NULL}, files are processed serially.}
 
 \item{auto_threads}{Logical; when \code{TRUE} and \code{BPPARAM} has multiple workers,
-BamScale automatically caps per-file OpenMP threads to avoid
-oversubscription.}
+BamScale adaptively avoids oversubscription by preserving higher
+per-file OpenMP thread counts when possible and reducing the number of
+concurrently active file workers before shrinking per-file threads.}
 
 \item{use.names}{Passed to alignment object conversion. When \code{TRUE}, read names
 (\code{qname}) are used as object names.}
@@ -98,10 +99,11 @@ Parallelism model:
 \item \code{threads} parallelizes within each file via OpenMP.
 \item Effective total concurrency is approximately
 \code{min(length(file), BiocParallel::bpnworkers(BPPARAM)) * threads}.
-\item If \code{auto_threads = TRUE} and \code{BPPARAM} has multiple workers, per-file
-OpenMP threads are set to
-\code{max(1, min(threads, floor(available_cores / workers_eff)))}, where
-\code{workers_eff = min(length(file), BiocParallel::bpnworkers(BPPARAM))}.
+\item If \code{auto_threads = TRUE} and \code{BPPARAM} has multiple workers, BamScale
+first limits the number of concurrently active workers to preserve the
+requested per-file thread count within the detected core budget, then
+caps per-file OpenMP threads only if a single file would still
+oversubscribe the machine.
 }
 
 Compatibility notes:

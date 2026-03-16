@@ -187,11 +187,11 @@ test_that("auto_threads validates logical input", {
 })
 
 
-test_that("auto_threads caps per-file OpenMP threads using BPPARAM workers", {
+test_that("auto_threads preserves per-file threads by reducing active workers first", {
   skip_if_not_installed("BiocParallel")
 
   bp <- tryCatch(
-    BiocParallel::SnowParam(workers = 2L, type = "SOCK", progressbar = FALSE),
+    BiocParallel::SnowParam(workers = 8L, type = "SOCK", progressbar = FALSE),
     error = function(e) NULL
   )
   if (is.null(bp)) {
@@ -199,13 +199,40 @@ test_that("auto_threads caps per-file OpenMP threads using BPPARAM workers", {
   }
   on.exit(try(BiocParallel::bpstop(bp), silent = TRUE), add = TRUE)
 
-  resolved <- BamScale:::.bamscale_resolve_threads(
+  plan <- BamScale:::.bamscale_resolve_parallel_plan(
     threads = 64L,
     BPPARAM = bp,
     auto_threads = TRUE,
-    n_files = 4L
+    n_files = 8L
   )
 
-  expected <- max(1L, min(64L, floor(BamScale:::.bamscale_detect_cores() / 2L)))
-  expect_equal(resolved, expected)
+  expected_threads <- max(1L, min(64L, BamScale:::.bamscale_detect_cores()))
+  expect_equal(plan$threads, expected_threads)
+  expect_equal(plan$bp_workers, 1L)
+})
+
+
+test_that("auto_threads keeps multiple workers when requested per-file threads are small", {
+  skip_if_not_installed("BiocParallel")
+
+  bp <- tryCatch(
+    BiocParallel::SnowParam(workers = 8L, type = "SOCK", progressbar = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(bp)) {
+    skip("SnowParam could not be initialized in this environment")
+  }
+  on.exit(try(BiocParallel::bpstop(bp), silent = TRUE), add = TRUE)
+
+  plan <- BamScale:::.bamscale_resolve_parallel_plan(
+    threads = 2L,
+    BPPARAM = bp,
+    auto_threads = TRUE,
+    n_files = 8L
+  )
+
+  expected_workers <- min(8L, max(1L, floor(BamScale:::.bamscale_detect_cores() / 2L)))
+  expect_equal(plan$threads, 2L)
+  expect_equal(plan$bp_workers, expected_workers)
+  expect_lte(plan$threads * plan$bp_workers, max(1L, BamScale:::.bamscale_detect_cores()))
 })

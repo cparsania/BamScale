@@ -352,6 +352,40 @@ List read_bam_cpp(
     chunk_data[tid].tag.resize(tag_names.size());
   }
 
+  const auto reserve_chunk = [&](ThreadChunk& local, const size_t hint) {
+    if (hint == 0U) return;
+
+    if (need_qname) local.qname.reserve(hint);
+    if (need_flag) local.flag.reserve(hint);
+    if (need_rname) local.rname.reserve(hint);
+    if (need_pos) local.pos.reserve(hint);
+    if (need_strand) local.strand.reserve(hint);
+    if (need_qwidth) local.qwidth.reserve(hint);
+    if (need_mapq) local.mapq.reserve(hint);
+    if (need_cigar) local.cigar.reserve(hint);
+    if (need_mrnm) local.mrnm.reserve(hint);
+    if (need_mpos) local.mpos.reserve(hint);
+    if (need_isize) local.isize.reserve(hint);
+    if (need_seq) {
+      if (need_seq_compact) {
+        local.seq_raw.reserve(hint);
+      } else {
+        local.seq.reserve(hint);
+      }
+    }
+    if (need_qual) {
+      if (need_qual_compact) {
+        local.qual_raw.reserve(hint);
+      } else {
+        local.qual.reserve(hint);
+      }
+    }
+    if (with_which_label) local.which_label.reserve(hint);
+    for (size_t j = 0; j < local.tag.size(); ++j) {
+      local.tag[j].reserve(hint);
+    }
+  };
+
   while (true) {
     const int state = inbam.fillReads();
     if (state == 1) break;
@@ -381,6 +415,10 @@ List read_bam_cpp(
       for (size_t j = 0; j < local.tag.size(); ++j) {
         local.tag[j].clear();
       }
+
+      const size_t bytes_hint = inbam.remainingThreadReadsBuffer(tid);
+      const size_t record_hint = std::max(static_cast<size_t>(1U), bytes_hint / 128U);
+      reserve_chunk(local, record_hint);
     }
 
 #ifdef _OPENMP
