@@ -13,7 +13,7 @@ GenomicAlignments::readGAlignmentPairs()."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.3</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.4</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -126,8 +126,9 @@ more than one BAM. If <code>NULL</code>, files are processed serially.</p></dd>
 
 <dt id="arg-auto-threads">auto_threads<a class="anchor" aria-label="anchor" href="#arg-auto-threads"></a></dt>
 <dd><p>Logical; when <code>TRUE</code> and <code>BPPARAM</code> has multiple workers,
-BamScale automatically caps per-file OpenMP threads to avoid
-oversubscription.</p></dd>
+BamScale adaptively avoids oversubscription by preserving higher
+per-file OpenMP thread counts when possible and reducing the number of
+concurrently active file workers before shrinking per-file threads.</p></dd>
 
 
 <dt id="arg-use-names">use.names<a class="anchor" aria-label="anchor" href="#arg-use-names"></a></dt>
@@ -160,10 +161,11 @@ conversion to downstream classes.</p>
 <li><p><code>threads</code> parallelizes within each file via OpenMP.</p></li>
 <li><p>Effective total concurrency is approximately
 <code>min(length(file), BiocParallel::bpnworkers(BPPARAM)) * threads</code>.</p></li>
-<li><p>If <code>auto_threads = TRUE</code> and <code>BPPARAM</code> has multiple workers, per-file
-OpenMP threads are set to
-<code>max(1, min(threads, floor(available_cores / workers_eff)))</code>, where
-<code>workers_eff = min(length(file), BiocParallel::bpnworkers(BPPARAM))</code>.</p></li>
+<li><p>If <code>auto_threads = TRUE</code> and <code>BPPARAM</code> has multiple workers, BamScale
+first limits the number of concurrently active workers to preserve the
+requested per-file thread count within the detected core budget, then
+caps per-file OpenMP threads only if a single file would still
+oversubscribe the machine.</p></li>
 </ul><p>Compatibility notes:</p><ul><li><p>Region filtering via <code>param$which</code> is supported as a sequential filter
 (not index-jump random access).</p></li>
 <li><p>Flag filtering uses <code>ScanBamFlag</code> semantics by converting logical flag

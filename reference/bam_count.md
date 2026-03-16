@@ -41,7 +41,9 @@ bam_count(
 - auto_threads:
 
   Logical; when `TRUE` and `BPPARAM` has multiple workers, BamScale
-  automatically caps per-file OpenMP threads to avoid oversubscription.
+  adaptively avoids oversubscription by preserving higher per-file
+  OpenMP thread counts when possible and reducing the number of
+  concurrently active file workers before shrinking per-file threads.
 
 - include_unmapped:
 
@@ -58,9 +60,10 @@ Parallelism behavior matches
 [`bam_read()`](https://cparsania.github.io/BamScale/reference/bam_read.md):
 `BPPARAM` distributes work across BAM files, while `threads` controls
 OpenMP work within each file. If `auto_threads = TRUE` and `BPPARAM` has
-multiple workers, per-file OpenMP threads are capped using
-`max(1, min(threads, floor(available_cores / workers_eff)))`, where
-`workers_eff = min(length(file), BiocParallel::bpnworkers(BPPARAM))`.
+multiple workers, BamScale first limits the number of concurrently
+active workers to preserve the requested per-file thread count within
+the detected core budget, then caps per-file OpenMP threads only if a
+single file would still oversubscribe the machine.
 
 ## Examples
 

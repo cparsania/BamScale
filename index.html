@@ -22,7 +22,7 @@
 
     <a class="navbar-brand me-2" href="index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.3</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.4</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -157,7 +157,7 @@
 </ul>
 <p>Approximate effective concurrency:</p>
 <p><code>min(length(file), bpnworkers(BPPARAM)) * threads</code></p>
-<p>When <code>auto_threads = TRUE</code>, BamScale can cap per-file threads under multi-worker execution to reduce oversubscription.</p>
+<p>When <code>auto_threads = TRUE</code>, BamScale preserves higher per-file thread counts when possible by reducing the number of concurrently active file workers before shrinking per-file threads.</p>
 </div>
 <div class="section level2">
 <h2 id="reproducibility-and-output-equivalence">Reproducibility and Output Equivalence<a class="anchor" aria-label="anchor" href="#reproducibility-and-output-equivalence"></a>

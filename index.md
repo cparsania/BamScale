@@ -100,8 +100,9 @@ Approximate effective concurrency:
 
 `min(length(file), bpnworkers(BPPARAM)) * threads`
 
-When `auto_threads = TRUE`, BamScale can cap per-file threads under
-multi-worker execution to reduce oversubscription.
+When `auto_threads = TRUE`, BamScale preserves higher per-file thread
+counts when possible by reducing the number of concurrently active file
+workers before shrinking per-file threads.
 
 ## Reproducibility and Output Equivalence
 
