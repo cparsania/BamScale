@@ -17,7 +17,8 @@ Report sections that claim cross-package comparison use only the `fair` track.
 
 ## Budget model
 
-- `--budget-threads`: target total compute budget (default: `min(48, detected_cores)`).
+- `--budget-threads`: target total compute budget.
+  Default: `min(48, detected_cores)` for `bamscale_showcase`/`balanced`, and `detected_cores` for `full`.
 - `--max-threads`: effective per-run thread ceiling (defaults to `--budget-threads`).
 - `--seqqual-compact=true|false`: include BamScale compact `seq/qual` runs (default: `TRUE` for `balanced/full`, `FALSE` for `bamscale_showcase`).
 - Multi-file BamScale uses balanced split:
