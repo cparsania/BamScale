@@ -8,6 +8,7 @@ using namespace Rcpp;
 #include <ompBAM.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -30,48 +31,10 @@ unsigned int clamp_threads(const int requested) {
 #endif
 }
 
-inline void decode_seq_ascii(const uint8_t* packed_seq, const uint32_t n_bases, std::string& out) {
-  static const char nt16_map[16] = {
-    '=', 'A', 'C', 'M',
-    'G', 'R', 'S', 'V',
-    'T', 'W', 'Y', 'H',
-    'K', 'D', 'B', 'N'
-  };
+struct PackedStringColumn;
 
-  out.clear();
-  if (n_bases == 0U || packed_seq == NULL) return;
-
-  out.resize(static_cast<size_t>(n_bases));
-
-  const uint32_t n_pairs = n_bases >> 1;
-  uint32_t j = 0U;
-  for (uint32_t i = 0; i < n_pairs; ++i) {
-    const uint8_t byte = packed_seq[i];
-    out[static_cast<size_t>(j++)] = nt16_map[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
-    out[static_cast<size_t>(j++)] = nt16_map[static_cast<uint8_t>(byte & 0x0FU)];
-  }
-
-  if ((n_bases & 1U) != 0U) {
-    const uint8_t byte = packed_seq[n_pairs];
-    out[static_cast<size_t>(j)] = nt16_map[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
-  }
-}
-
-inline void encode_qual_ascii(const uint8_t* qual_ptr, const uint32_t n_bases, std::string& out) {
-  out.clear();
-  if (n_bases == 0U || qual_ptr == NULL) return;
-
-  bool missing = true;
-  out.resize(static_cast<size_t>(n_bases));
-  for (uint32_t i = 0; i < n_bases; ++i) {
-    const uint8_t q = qual_ptr[i];
-    if (q != 255U) missing = false;
-    const uint8_t phred = (q == 255U) ? 0U : q;
-    out[static_cast<size_t>(i)] = static_cast<char>(phred + 33U);
-  }
-
-  if (missing) out.assign("*");
-}
+inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases);
+inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases);
 
 template <typename T>
 std::string join_numeric_vector(const std::vector<T>& x) {
@@ -174,6 +137,203 @@ List raw_list_from_bytes(const std::vector<std::vector<uint8_t> >& buffers) {
     out[i] = dst;
   }
   return out;
+}
+
+struct PackedStringColumn {
+  std::vector<size_t> offsets;
+  std::vector<size_t> lengths;
+  std::vector<char> bytes;
+
+  void clear() {
+    offsets.clear();
+    lengths.clear();
+    bytes.clear();
+  }
+
+  void reserve(const size_t n_strings, const size_t n_bytes) {
+    if (n_strings > 0U) {
+      offsets.reserve(n_strings);
+      lengths.reserve(n_strings);
+    }
+    if (n_bytes > 0U) {
+      bytes.reserve(n_bytes);
+    }
+  }
+
+  size_t size() const {
+    return offsets.size();
+  }
+
+  size_t bytes_size() const {
+    return bytes.size();
+  }
+
+  void append(const char* ptr, const size_t len) {
+    const size_t offset = bytes.size();
+    offsets.push_back(offset);
+    lengths.push_back(len);
+    if (ptr != NULL && len > 0U) {
+      bytes.resize(offset + len);
+      std::memcpy(bytes.data() + offset, ptr, len);
+    }
+  }
+
+  void append(const std::string& value) {
+    append(value.data(), value.size());
+  }
+
+  void append_from(const PackedStringColumn& other) {
+    const size_t base = bytes.size();
+    offsets.reserve(offsets.size() + other.offsets.size());
+    lengths.reserve(lengths.size() + other.lengths.size());
+    bytes.reserve(bytes.size() + other.bytes.size());
+
+    for (size_t i = 0; i < other.offsets.size(); ++i) {
+      offsets.push_back(base + other.offsets[i]);
+      lengths.push_back(other.lengths[i]);
+    }
+    bytes.insert(bytes.end(), other.bytes.begin(), other.bytes.end());
+  }
+};
+
+inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases) {
+  static const char nt16_map[16] = {
+    '=', 'A', 'C', 'M',
+    'G', 'R', 'S', 'V',
+    'T', 'W', 'Y', 'H',
+    'K', 'D', 'B', 'N'
+  };
+
+  const size_t offset = out.bytes.size();
+  const size_t len = static_cast<size_t>(n_bases);
+  out.offsets.push_back(offset);
+  out.lengths.push_back(len);
+
+  if (len == 0U || packed_seq == NULL) return;
+
+  out.bytes.resize(offset + len);
+  char* dst = out.bytes.data() + offset;
+
+  const uint32_t n_pairs = n_bases >> 1;
+  uint32_t j = 0U;
+  for (uint32_t i = 0; i < n_pairs; ++i) {
+    const uint8_t byte = packed_seq[i];
+    dst[j++] = nt16_map[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
+    dst[j++] = nt16_map[static_cast<uint8_t>(byte & 0x0FU)];
+  }
+
+  if ((n_bases & 1U) != 0U) {
+    const uint8_t byte = packed_seq[n_pairs];
+    dst[j] = nt16_map[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
+  }
+}
+
+inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases) {
+  const size_t offset = out.bytes.size();
+  const size_t len = static_cast<size_t>(n_bases);
+
+  if (len == 0U || qual_ptr == NULL) {
+    out.offsets.push_back(offset);
+    out.lengths.push_back(0U);
+    return;
+  }
+
+  bool missing = true;
+  out.bytes.resize(offset + len);
+  char* dst = out.bytes.data() + offset;
+  for (uint32_t i = 0; i < n_bases; ++i) {
+    const uint8_t q = qual_ptr[i];
+    if (q != 255U) missing = false;
+    const uint8_t phred = (q == 255U) ? 0U : q;
+    dst[static_cast<size_t>(i)] = static_cast<char>(phred + 33U);
+  }
+
+  out.offsets.push_back(offset);
+  if (missing) {
+    out.lengths.push_back(1U);
+    out.bytes.resize(offset + 1U);
+    out.bytes[offset] = '*';
+  } else {
+    out.lengths.push_back(len);
+  }
+}
+
+CharacterVector packed_strings_to_character(const PackedStringColumn& packed) {
+  const R_xlen_t n = static_cast<R_xlen_t>(packed.size());
+  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+  SEXP empty = Rf_mkCharLen("", 0);
+
+  for (R_xlen_t i = 0; i < n; ++i) {
+    const size_t idx = static_cast<size_t>(i);
+    const size_t offset = packed.offsets[idx];
+    const size_t len = packed.lengths[idx];
+    if (len == 0U) {
+      SET_STRING_ELT(out, i, empty);
+    } else {
+      SET_STRING_ELT(
+        out,
+        i,
+        Rf_mkCharLen(packed.bytes.data() + offset, static_cast<int>(len))
+      );
+    }
+  }
+
+  UNPROTECT(1);
+  return CharacterVector(out);
+}
+
+CharacterVector refs_from_ids(
+    const std::vector<int>& ref_ids,
+    const std::vector<std::string>& chr_names
+) {
+  const R_xlen_t n = static_cast<R_xlen_t>(ref_ids.size());
+  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+
+  std::vector<SEXP> chr_cache(chr_names.size(), R_NilValue);
+  const SEXP star = Rf_mkCharLen("*", 1);
+
+  for (R_xlen_t i = 0; i < n; ++i) {
+    const int ref_id = ref_ids[static_cast<size_t>(i)];
+    if (ref_id >= 0 && static_cast<size_t>(ref_id) < chr_names.size()) {
+      SEXP cached = chr_cache[static_cast<size_t>(ref_id)];
+      if (cached == R_NilValue) {
+        cached = Rf_mkCharLen(chr_names[static_cast<size_t>(ref_id)].c_str(),
+                              static_cast<int>(chr_names[static_cast<size_t>(ref_id)].size()));
+        chr_cache[static_cast<size_t>(ref_id)] = cached;
+      }
+      SET_STRING_ELT(out, i, cached);
+    } else {
+      SET_STRING_ELT(out, i, star);
+    }
+  }
+
+  UNPROTECT(1);
+  return CharacterVector(out);
+}
+
+CharacterVector strands_from_codes(const std::vector<int>& strand_codes) {
+  const R_xlen_t n = static_cast<R_xlen_t>(strand_codes.size());
+  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+  const SEXP plus = Rf_mkCharLen("+", 1);
+  const SEXP minus = Rf_mkCharLen("-", 1);
+  const SEXP star = Rf_mkCharLen("*", 1);
+
+  for (R_xlen_t i = 0; i < n; ++i) {
+    switch (strand_codes[static_cast<size_t>(i)]) {
+      case 1:
+        SET_STRING_ELT(out, i, minus);
+        break;
+      case 2:
+        SET_STRING_ELT(out, i, star);
+        break;
+      default:
+        SET_STRING_ELT(out, i, plus);
+        break;
+    }
+  }
+
+  UNPROTECT(1);
+  return CharacterVector(out);
 }
 
 struct QueryInterval {
@@ -307,19 +467,19 @@ List read_bam_cpp(
     stop("Failed to read BAM header");
   }
 
-  std::vector<std::string> qname_out;
+  PackedStringColumn qname_out;
   std::vector<int> flag_out;
-  std::vector<std::string> rname_out;
+  std::vector<int> rname_out;
   std::vector<int> pos_out;
-  std::vector<std::string> strand_out;
+  std::vector<int> strand_out;
   std::vector<int> qwidth_out;
   std::vector<int> mapq_out;
-  std::vector<std::string> cigar_out;
-  std::vector<std::string> mrnm_out;
+  PackedStringColumn cigar_out;
+  std::vector<int> mrnm_out;
   std::vector<int> mpos_out;
   std::vector<int> isize_out;
-  std::vector<std::string> seq_out;
-  std::vector<std::string> qual_out;
+  PackedStringColumn seq_out;
+  PackedStringColumn qual_out;
   std::vector< std::vector<uint8_t> > seq_raw_out;
   std::vector< std::vector<uint8_t> > qual_raw_out;
   std::vector<std::string> which_label_out;
@@ -327,19 +487,19 @@ List read_bam_cpp(
   size_t n_records_total = 0U;
 
   struct ThreadChunk {
-    std::vector<std::string> qname;
+    PackedStringColumn qname;
     std::vector<int> flag;
-    std::vector<std::string> rname;
+    std::vector<int> rname;
     std::vector<int> pos;
-    std::vector<std::string> strand;
+    std::vector<int> strand;
     std::vector<int> qwidth;
     std::vector<int> mapq;
-    std::vector<std::string> cigar;
-    std::vector<std::string> mrnm;
+    PackedStringColumn cigar;
+    std::vector<int> mrnm;
     std::vector<int> mpos;
     std::vector<int> isize;
-    std::vector<std::string> seq;
-    std::vector<std::string> qual;
+    PackedStringColumn seq;
+    PackedStringColumn qual;
     std::vector< std::vector<uint8_t> > seq_raw;
     std::vector< std::vector<uint8_t> > qual_raw;
     std::vector<std::string> which_label;
@@ -355,14 +515,14 @@ List read_bam_cpp(
   const auto reserve_chunk = [&](ThreadChunk& local, const size_t hint) {
     if (hint == 0U) return;
 
-    if (need_qname) local.qname.reserve(hint);
+    if (need_qname) local.qname.reserve(hint, hint * 24U);
     if (need_flag) local.flag.reserve(hint);
     if (need_rname) local.rname.reserve(hint);
     if (need_pos) local.pos.reserve(hint);
     if (need_strand) local.strand.reserve(hint);
     if (need_qwidth) local.qwidth.reserve(hint);
     if (need_mapq) local.mapq.reserve(hint);
-    if (need_cigar) local.cigar.reserve(hint);
+    if (need_cigar) local.cigar.reserve(hint, hint * 16U);
     if (need_mrnm) local.mrnm.reserve(hint);
     if (need_mpos) local.mpos.reserve(hint);
     if (need_isize) local.isize.reserve(hint);
@@ -370,14 +530,14 @@ List read_bam_cpp(
       if (need_seq_compact) {
         local.seq_raw.reserve(hint);
       } else {
-        local.seq.reserve(hint);
+        local.seq.reserve(hint, 0U);
       }
     }
     if (need_qual) {
       if (need_qual_compact) {
         local.qual_raw.reserve(hint);
       } else {
-        local.qual.reserve(hint);
+        local.qual.reserve(hint, 0U);
       }
     }
     if (with_which_label) local.which_label.reserve(hint);
@@ -426,6 +586,7 @@ List read_bam_cpp(
 #endif
     for (unsigned int tid = 0; tid < threads; ++tid) {
       ThreadChunk& local = chunk_data[tid];
+      std::string cigar_scratch;
       while (true) {
         pbam1_t read(inbam.supplyRead(tid));
         if (!read.validate()) break;
@@ -467,31 +628,27 @@ List read_bam_cpp(
         if (need_qname) {
           const char* qname_ptr = read.read_name();
           const uint8_t qname_len = read.l_read_name();
-          local.qname.emplace_back(
+          local.qname.append(
             qname_ptr,
-            qname_ptr + (qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U)
+            qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U
           );
         }
         if (need_flag) {
           local.flag.push_back(static_cast<int>(flag));
         }
         if (need_rname) {
-          if (this_ref_id >= 0) {
-            local.rname.push_back(chr_names[static_cast<size_t>(this_ref_id)]);
-          } else {
-            local.rname.push_back("*");
-          }
+          local.rname.push_back(this_ref_id);
         }
         if (need_pos) {
           local.pos.push_back(this_pos);
         }
         if (need_strand) {
           if (unmapped) {
-            local.strand.push_back("*");
+            local.strand.push_back(2);
           } else if ((flag & 0x10U) != 0U) {
-            local.strand.push_back("-");
+            local.strand.push_back(1);
           } else {
-            local.strand.push_back("+");
+            local.strand.push_back(0);
           }
         }
         if (need_qwidth) {
@@ -501,16 +658,15 @@ List read_bam_cpp(
           local.mapq.push_back(this_mapq);
         }
         if (need_cigar) {
-          local.cigar.emplace_back();
-          read.cigar(local.cigar.back());
+          cigar_scratch.clear();
+          read.cigar(cigar_scratch);
+          local.cigar.append(cigar_scratch);
         }
         if (need_mrnm) {
           const int32_t next_ref_id = read.next_refID();
-          if (next_ref_id >= 0 && next_ref_id < chrom_count) {
-            local.mrnm.push_back(chr_names[static_cast<size_t>(next_ref_id)]);
-          } else {
-            local.mrnm.push_back("*");
-          }
+          local.mrnm.push_back(
+            (next_ref_id >= 0 && next_ref_id < chrom_count) ? static_cast<int>(next_ref_id) : -1
+          );
         }
         if (need_mpos) {
           const int32_t next_pos = read.next_pos();
@@ -532,8 +688,7 @@ List read_bam_cpp(
               local.seq_raw.back().assign(seq_ptr, seq_ptr + n_bytes);
             }
           } else {
-            local.seq.emplace_back();
-            decode_seq_ascii(read.seq(), read_len, local.seq.back());
+            append_decoded_seq_ascii(local.seq, read.seq(), read_len);
           }
         }
         if (need_qual) {
@@ -547,11 +702,10 @@ List read_bam_cpp(
               );
             }
           } else {
-            local.qual.emplace_back();
-            encode_qual_ascii(
+            append_encoded_qual_ascii(
+              local.qual,
               reinterpret_cast<const uint8_t*>(read.qual()),
-              read_len,
-              local.qual.back()
+              read_len
             );
           }
         }
@@ -572,14 +726,26 @@ List read_bam_cpp(
 
     if (batch_records > 0U) {
       const size_t target = n_records_total + batch_records;
-      if (need_qname) qname_out.reserve(target);
+      if (need_qname) {
+        size_t batch_qname_bytes = 0U;
+        for (unsigned int tid = 0; tid < threads; ++tid) {
+          batch_qname_bytes += chunk_data[tid].qname.bytes_size();
+        }
+        qname_out.reserve(target, qname_out.bytes_size() + batch_qname_bytes);
+      }
       if (need_flag) flag_out.reserve(target);
       if (need_rname) rname_out.reserve(target);
       if (need_pos) pos_out.reserve(target);
       if (need_strand) strand_out.reserve(target);
       if (need_qwidth) qwidth_out.reserve(target);
       if (need_mapq) mapq_out.reserve(target);
-      if (need_cigar) cigar_out.reserve(target);
+      if (need_cigar) {
+        size_t batch_cigar_bytes = 0U;
+        for (unsigned int tid = 0; tid < threads; ++tid) {
+          batch_cigar_bytes += chunk_data[tid].cigar.bytes_size();
+        }
+        cigar_out.reserve(target, cigar_out.bytes_size() + batch_cigar_bytes);
+      }
       if (need_mrnm) mrnm_out.reserve(target);
       if (need_mpos) mpos_out.reserve(target);
       if (need_isize) isize_out.reserve(target);
@@ -587,14 +753,22 @@ List read_bam_cpp(
         if (need_seq_compact) {
           seq_raw_out.reserve(target);
         } else {
-          seq_out.reserve(target);
+          size_t batch_seq_bytes = 0U;
+          for (unsigned int tid = 0; tid < threads; ++tid) {
+            batch_seq_bytes += chunk_data[tid].seq.bytes_size();
+          }
+          seq_out.reserve(target, seq_out.bytes_size() + batch_seq_bytes);
         }
       }
       if (need_qual) {
         if (need_qual_compact) {
           qual_raw_out.reserve(target);
         } else {
-          qual_out.reserve(target);
+          size_t batch_qual_bytes = 0U;
+          for (unsigned int tid = 0; tid < threads; ++tid) {
+            batch_qual_bytes += chunk_data[tid].qual.bytes_size();
+          }
+          qual_out.reserve(target, qual_out.bytes_size() + batch_qual_bytes);
         }
       }
       if (with_which_label) which_label_out.reserve(target);
@@ -608,11 +782,7 @@ List read_bam_cpp(
       n_records_total += local.n_records;
 
       if (need_qname) {
-        qname_out.insert(
-          qname_out.end(),
-          std::make_move_iterator(local.qname.begin()),
-          std::make_move_iterator(local.qname.end())
-        );
+        qname_out.append_from(local.qname);
       }
       if (need_flag) {
         flag_out.insert(flag_out.end(), local.flag.begin(), local.flag.end());
@@ -641,11 +811,7 @@ List read_bam_cpp(
         mapq_out.insert(mapq_out.end(), local.mapq.begin(), local.mapq.end());
       }
       if (need_cigar) {
-        cigar_out.insert(
-          cigar_out.end(),
-          std::make_move_iterator(local.cigar.begin()),
-          std::make_move_iterator(local.cigar.end())
-        );
+        cigar_out.append_from(local.cigar);
       }
       if (need_mrnm) {
         mrnm_out.insert(
@@ -668,11 +834,7 @@ List read_bam_cpp(
             std::make_move_iterator(local.seq_raw.end())
           );
         } else {
-          seq_out.insert(
-            seq_out.end(),
-            std::make_move_iterator(local.seq.begin()),
-            std::make_move_iterator(local.seq.end())
-          );
+          seq_out.append_from(local.seq);
         }
       }
       if (need_qual) {
@@ -683,11 +845,7 @@ List read_bam_cpp(
             std::make_move_iterator(local.qual_raw.end())
           );
         } else {
-          qual_out.insert(
-            qual_out.end(),
-            std::make_move_iterator(local.qual.begin()),
-            std::make_move_iterator(local.qual.end())
-          );
+          qual_out.append_from(local.qual);
         }
       }
       if (with_which_label) {
@@ -712,15 +870,15 @@ List read_bam_cpp(
 
   const int n = static_cast<int>(n_records_total);
   List out;
-  if (need_qname) out["qname"] = wrap(qname_out);
+  if (need_qname) out["qname"] = packed_strings_to_character(qname_out);
   if (need_flag) out["flag"] = wrap(flag_out);
-  if (need_rname) out["rname"] = wrap(rname_out);
+  if (need_rname) out["rname"] = refs_from_ids(rname_out, chr_names);
   if (need_pos) out["pos"] = wrap(pos_out);
-  if (need_strand) out["strand"] = wrap(strand_out);
+  if (need_strand) out["strand"] = strands_from_codes(strand_out);
   if (need_qwidth) out["qwidth"] = wrap(qwidth_out);
   if (need_mapq) out["mapq"] = wrap(mapq_out);
-  if (need_cigar) out["cigar"] = wrap(cigar_out);
-  if (need_mrnm) out["mrnm"] = wrap(mrnm_out);
+  if (need_cigar) out["cigar"] = packed_strings_to_character(cigar_out);
+  if (need_mrnm) out["mrnm"] = refs_from_ids(mrnm_out, chr_names);
   if (need_mpos) out["mpos"] = wrap(mpos_out);
   if (need_isize) out["isize"] = wrap(isize_out);
 
@@ -728,14 +886,14 @@ List read_bam_cpp(
     if (need_seq_compact) {
       out["seq"] = raw_list_from_bytes(seq_raw_out);
     } else {
-      out["seq"] = wrap(seq_out);
+      out["seq"] = packed_strings_to_character(seq_out);
     }
   }
   if (need_qual) {
     if (need_qual_compact) {
       out["qual"] = raw_list_from_bytes(qual_raw_out);
     } else {
-      out["qual"] = wrap(qual_out);
+      out["qual"] = packed_strings_to_character(qual_out);
     }
   }
   if (with_which_label) {
