@@ -24,23 +24,55 @@ suppressPackageStartupMessages({
 
 results_dir <- params$results_dir
 summary_path <- file.path(results_dir, "summary.csv")
+summary_qmd_path <- file.path(results_dir, "summary_qmd.csv")
+outer_summary_path <- file.path(results_dir, "outer_run_summary.csv")
 iter_path <- file.path(results_dir, "iterations.csv")
+resolved_plans_path <- file.path(results_dir, "resolved_plans.csv")
+correctness_path <- file.path(results_dir, "correctness_preflight.csv")
+baseline_comparison_path <- file.path(results_dir, "baseline_comparison.csv")
+baseline_regressions_path <- file.path(results_dir, "baseline_regressions.csv")
 files_path <- file.path(results_dir, "files.csv")
+host_info_path <- file.path(results_dir, "host_info.csv")
+env_vars_path <- file.path(results_dir, "env_vars.csv")
 config_path <- file.path(results_dir, "config.txt")
 
-stopifnot(file.exists(summary_path))
+summary_input_path <- if (file.exists(summary_qmd_path)) summary_qmd_path else summary_path
+stopifnot(file.exists(summary_input_path))
 
-summary_df <- readr::read_csv(summary_path, show_col_types = FALSE)
+summary_df <- readr::read_csv(summary_input_path, show_col_types = FALSE)
+raw_summary_df <- if (file.exists(summary_path)) readr::read_csv(summary_path, show_col_types = FALSE) else tibble::tibble()
+outer_summary_df <- if (file.exists(outer_summary_path)) readr::read_csv(outer_summary_path, show_col_types = FALSE) else tibble::tibble()
 iter_df <- if (file.exists(iter_path)) readr::read_csv(iter_path, show_col_types = FALSE) else tibble::tibble()
+resolved_plans_df <- if (file.exists(resolved_plans_path)) readr::read_csv(resolved_plans_path, show_col_types = FALSE) else tibble::tibble()
+correctness_df <- if (file.exists(correctness_path)) readr::read_csv(correctness_path, show_col_types = FALSE) else tibble::tibble()
+baseline_comparison_df <- if (file.exists(baseline_comparison_path)) readr::read_csv(baseline_comparison_path, show_col_types = FALSE) else tibble::tibble()
+baseline_regressions_df <- if (file.exists(baseline_regressions_path)) readr::read_csv(baseline_regressions_path, show_col_types = FALSE) else tibble::tibble()
 files_df <- if (file.exists(files_path)) readr::read_csv(files_path, show_col_types = FALSE) else tibble::tibble()
+host_info_df <- if (file.exists(host_info_path)) readr::read_csv(host_info_path, show_col_types = FALSE) else tibble::tibble()
+env_vars_df <- if (file.exists(env_vars_path)) readr::read_csv(env_vars_path, show_col_types = FALSE) else tibble::tibble()
 
 if (!"comparison_track" %in% colnames(summary_df)) summary_df$comparison_track <- "fair"
 if (!"seqqual_mode" %in% colnames(summary_df)) summary_df$seqqual_mode <- NA_character_
+if (!"auto_threads" %in% colnames(summary_df)) summary_df$auto_threads <- FALSE
+if (!"outer_runs_planned" %in% colnames(summary_df)) summary_df$outer_runs_planned <- 1L
+if (!"outer_runs_completed" %in% colnames(summary_df)) summary_df$outer_runs_completed <- 1L
+if (!"time_stat_basis" %in% colnames(summary_df)) summary_df$time_stat_basis <- "single_run_median_s"
+if (!"threads_requested" %in% colnames(summary_df) && "threads_effective" %in% colnames(summary_df)) summary_df$threads_requested <- summary_df$threads_effective
+if (!"bp_workers_requested" %in% colnames(summary_df) && "bp_workers" %in% colnames(summary_df)) summary_df$bp_workers_requested <- summary_df$bp_workers
+if (!"bp_workers_effective" %in% colnames(summary_df) && "bp_workers" %in% colnames(summary_df)) summary_df$bp_workers_effective <- summary_df$bp_workers
+if (!"bp_workers" %in% colnames(summary_df) && "bp_workers_effective" %in% colnames(summary_df)) summary_df$bp_workers <- summary_df$bp_workers_effective
+if (!"total_threads_requested" %in% colnames(summary_df) && "total_threads" %in% colnames(summary_df)) summary_df$total_threads_requested <- summary_df$total_threads
+if (!"total_threads_effective" %in% colnames(summary_df) && "total_threads" %in% colnames(summary_df)) summary_df$total_threads_effective <- summary_df$total_threads
+if (!"total_threads" %in% colnames(summary_df) && "total_threads_effective" %in% colnames(summary_df)) summary_df$total_threads <- summary_df$total_threads_effective
 
 summary_df <- summary_df %>%
   mutate(
     comparison_track = if_else(is.na(comparison_track) | !nzchar(comparison_track), "fair", comparison_track),
-    seqqual_mode = if_else(is.na(seqqual_mode) | !nzchar(seqqual_mode), NA_character_, seqqual_mode)
+    seqqual_mode = if_else(is.na(seqqual_mode) | !nzchar(seqqual_mode), NA_character_, seqqual_mode),
+    bp_workers_effective = coalesce(bp_workers_effective, bp_workers),
+    bp_workers = coalesce(bp_workers, bp_workers_effective),
+    total_threads_effective = coalesce(total_threads_effective, total_threads),
+    total_threads = coalesce(total_threads, total_threads_effective)
   )
 
 summary_ok <- summary_df %>% filter(status == "ok")
@@ -49,9 +81,14 @@ optimized_ok <- summary_ok %>% filter(comparison_track == "optimized")
 ```
 
 -   Results directory: `r normalizePath(results_dir, winslash = "/", mustWork = FALSE)`
+-   Summary source: `r basename(summary_input_path)`
 -   Total cases: `r nrow(summary_df)`
 -   Successful: `r sum(summary_df$status == "ok")`
 -   Failed: `r sum(summary_df$status != "ok")`
+-   Outer runs planned: `r max(summary_df$outer_runs_planned, na.rm = TRUE)`
+-   Timing basis: `r paste(unique(summary_df$time_stat_basis), collapse = ", ")`
+-   Baseline comparison rows: `r nrow(baseline_comparison_df)`
+-   Baseline regressions flagged: `r nrow(baseline_regressions_df)`
 
 ## Configuration
 
@@ -75,6 +112,69 @@ if (nrow(files_df) > 0) {
 }
 ```
 
+## Host Metadata
+
+```{r}
+if (nrow(host_info_df) > 0) {
+  knitr::kable(host_info_df)
+} else {
+  cat("No host_info.csv found")
+}
+```
+
+```{r}
+if (nrow(env_vars_df) > 0) {
+  env_vars_df %>%
+    filter(!is.na(value), nzchar(value)) %>%
+    knitr::kable()
+} else {
+  cat("No env_vars.csv found")
+}
+```
+
+## Validation
+
+```{r}
+if (nrow(correctness_df) > 0) {
+  correctness_df %>% knitr::kable()
+} else {
+  cat("No correctness_preflight.csv found")
+}
+```
+
+## Baseline Check
+
+```{r}
+if (nrow(baseline_comparison_df) > 0) {
+  baseline_comparison_df %>%
+    count(comparison_status, sort = TRUE) %>%
+    knitr::kable()
+} else {
+  cat("No baseline_comparison.csv found")
+}
+```
+
+```{r}
+if (nrow(baseline_regressions_df) > 0) {
+  baseline_regressions_df %>%
+    select(
+      scenario, workload, method, comparison_track, seqqual_mode,
+      bp_workers_effective, threads_effective,
+      current_median_s, baseline_median_s, delta_pct, input_match
+    ) %>%
+    mutate(
+      current_median_s = round(current_median_s, 4),
+      baseline_median_s = round(baseline_median_s, 4),
+      delta_pct = round(delta_pct, 2)
+    ) %>%
+    knitr::kable()
+} else if (nrow(baseline_comparison_df) > 0) {
+  cat("No matched regressions exceeded the configured threshold.")
+} else {
+  cat("No baseline_regressions.csv found")
+}
+```
+
 ## Summary
 
 ```{r}
@@ -82,8 +182,8 @@ summary_df %>%
   arrange(scenario, workload, median_s) %>%
   select(
     scenario, comparison_track, workload, seqqual_mode, method,
-    threads_effective, bp_workers, n_files, median_s, records_per_s,
-    mb_per_s, status
+    threads_effective, bp_workers_effective, total_threads_effective,
+    outer_runs_completed, median_s, records_per_s, mb_per_s, status
   ) %>%
   mutate(
     median_s = round(median_s, 4),
@@ -163,7 +263,7 @@ multi_best_by_family <- summary_ok %>%
   slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
   mutate(
-    config = paste0("workers=", bp_workers, ", threads=", threads_effective, ", total_threads=", total_threads),
+    config = paste0("workers=", bp_workers_effective, ", threads=", threads_effective, ", total_threads=", total_threads_effective),
     median_s = round(median_s, 4),
     records_per_s = round(records_per_s, 2),
     mb_per_s = round(mb_per_s, 2)
@@ -176,7 +276,7 @@ multi_best_overall <- summary_ok %>%
   slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
   mutate(
-    config = paste0("workers=", bp_workers, ", threads=", threads_effective, ", total_threads=", total_threads),
+    config = paste0("workers=", bp_workers_effective, ", threads=", threads_effective, ", total_threads=", total_threads_effective),
     median_s = round(median_s, 4),
     records_per_s = round(records_per_s, 2),
     mb_per_s = round(mb_per_s, 2)
@@ -206,7 +306,7 @@ multi_bamscale <- summary_ok %>%
     bamscale_method = method,
     bamscale_median_s = median_s,
     bamscale_threads = threads_effective,
-    bamscale_workers = bp_workers
+    bamscale_workers = bp_workers_effective
   )
 
 multi_comp <- summary_ok %>%
@@ -220,7 +320,7 @@ multi_comp <- summary_ok %>%
     comp_method = method,
     comp_median_s = median_s,
     comp_threads = threads_effective,
-    comp_workers = bp_workers
+    comp_workers = bp_workers_effective
   )
 
 multi_rel_tbl <- multi_bamscale %>%
@@ -271,7 +371,7 @@ bamscale_multi_profile <- summary_ok %>%
   ) %>%
   ungroup() %>%
   mutate(
-    config = paste0("workers=", bp_workers, ", threads=", threads_effective, ", total_threads=", total_threads),
+    config = paste0("workers=", bp_workers_effective, ", threads=", threads_effective, ", total_threads=", total_threads_effective),
     median_s = round(median_s, 4),
     best_median_s = round(best_median_s, 4),
     slowdown_vs_best = round(slowdown_vs_best, 3)
@@ -283,6 +383,48 @@ if (nrow(bamscale_multi_profile) > 0) {
   knitr::kable(bamscale_multi_profile)
 } else {
   cat("No BamScale multi-file rows")
+}
+```
+
+## Adaptive Auto-Threads Plans
+
+```{r}
+adaptive_tbl <- summary_ok %>%
+  filter(comparison_track == "adaptive" | auto_threads) %>%
+  mutate(
+    requested_plan = paste0(bp_workers_requested, "x", threads_requested),
+    effective_plan = paste0(bp_workers_effective, "x", threads_effective),
+    median_s = round(median_s, 4),
+    effective_thread_fraction = if_else(
+      !is.na(total_threads_requested) & total_threads_requested > 0,
+      round(total_threads_effective / total_threads_requested, 3),
+      NA_real_
+    )
+  ) %>%
+  select(
+    scenario, workload, method, requested_plan, effective_plan,
+    total_threads_requested, total_threads_effective,
+    effective_thread_fraction, median_s
+  )
+
+if (nrow(adaptive_tbl) > 0) {
+  knitr::kable(adaptive_tbl)
+} else if (nrow(resolved_plans_df) > 0) {
+  resolved_plans_df %>%
+    filter(auto_threads) %>%
+    mutate(
+      requested_plan = paste0(bp_workers_requested, "x", threads_requested),
+      effective_plan = paste0(bp_workers_effective, "x", threads_effective)
+    ) %>%
+    select(
+      outer_run, scenario, workload, method,
+      requested_plan, effective_plan,
+      total_threads_requested, total_threads_effective,
+      effective_thread_fraction
+    ) %>%
+    knitr::kable()
+} else {
+  cat("No adaptive auto_threads rows found")
 }
 ```
 
@@ -351,14 +493,14 @@ multi_df <- summary_ok %>%
   filter(scenario == "multi", comparison_track == "fair")
 
 if (nrow(multi_df) > 0) {
-  ggplot(multi_df, aes(x = bp_workers, y = median_s, color = method)) +
+  ggplot(multi_df, aes(x = bp_workers_effective, y = median_s, color = method)) +
     geom_line(linewidth = 0.9) +
     geom_point(size = 2) +
     facet_wrap(~workload, scales = "free_y") +
-    scale_x_continuous(breaks = sort(unique(multi_df$bp_workers))) +
+    scale_x_continuous(breaks = sort(unique(multi_df$bp_workers_effective))) +
     labs(
       title = "Multi-file scaling",
-      x = "BiocParallel workers",
+      x = "Effective BiocParallel workers",
       y = "Median elapsed (s)",
       color = "Method"
     ) +
