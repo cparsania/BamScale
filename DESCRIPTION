@@ -26,6 +26,7 @@ Suggests:
     BiocParallel,
     Biostrings,
     chipseqDBData,
+    dplyr,
     ExperimentHub,
     GenomicAlignments,
     GenomicRanges,
@@ -34,11 +35,15 @@ Suggests:
     IRanges,
     knitr,
     quarto,
+    readr,
     rmarkdown,
     ompBAM,
     Rsamtools,
+    scales,
     S4Vectors,
-    testthat (>= 3.0.0)
+    tibble,
+    testthat (>= 3.0.0),
+    tidyr,
 VignetteBuilder:
     quarto
 Config/testthat/edition: 3
