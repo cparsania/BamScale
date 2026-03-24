@@ -10,8 +10,8 @@ MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://cparsania.git
 
 BamScale is a multithreaded BAM processing package for R built on top of
 the `ompBAM` C++ engine. It is designed for Bioconductor users who need
-high-throughput BAM parsing while preserving familiar
-`scanBam`/`readGAlignments`-style workflows.
+high-throughput BAM parsing while preserving familiar `Rsamtools` and
+`GenomicAlignments` workflow patterns.
 
 ## Why BamScale in Bioconductor Workflows?
 
@@ -20,6 +20,28 @@ BamScale focuses on three goals:
 - speed on modern multi-core systems,
 - compatibility with common Bioconductor input/output contracts,
 - transparent benchmarking and reproducibility.
+
+In many Bioconductor pipelines, BAM access is still a major bottleneck.
+The core bottleneck is not only BAM decompression itself, but also the
+fact that existing R-facing workflows often rely on effectively
+single-threaded per-file access patterns. BamScale addresses this by
+exposing OpenMP threading from the `ompBAM` engine directly at the R
+interface, while still returning Bioconductor-friendly objects.
+
+The practical design goal is not to replace familiar Bioconductor
+workflows with a separate ecosystem. Instead, BamScale aims to preserve
+the way users already work with:
+
+- [`Rsamtools::scanBam()`](https://rdrr.io/pkg/Rsamtools/man/scanBam.html)-style
+  field extraction,
+- [`GenomicAlignments::readGAlignments()`](https://rdrr.io/pkg/GenomicAlignments/man/readGAlignments.html)-style
+  alignment-object workflows,
+- `BiocParallel` file-level execution when multiple BAMs are processed
+  together.
+
+This means BamScale is intended to fit where existing tooling already
+fits, but with an additional within-file threading axis that can remove
+the current parsing bottleneck for alignment-centric workloads.
 
 Key capabilities:
 
@@ -33,6 +55,37 @@ Key capabilities:
   - [`GenomicAlignments::GAlignments`](https://rdrr.io/pkg/GenomicAlignments/man/GAlignments-class.html),
   - [`GenomicAlignments::GAlignmentPairs`](https://rdrr.io/pkg/GenomicAlignments/man/GAlignmentPairs-class.html),
   - `scanBam`-shaped list output (`as = "scanBam"`).
+
+Here, `step1` refers to the common alignment-metadata extraction
+workload built from fields such as:
+
+- `qname`
+- `flag`
+- `rname`
+- `pos`
+- `mapq`
+- `cigar`
+
+This is the kind of BAM access pattern used by many downstream QC,
+filtering, and fragment-level summary workflows.
+
+## Compatibility with Existing Bioconductor Workflows
+
+BamScale is designed to be familiar to users who already work with
+`Rsamtools` and `GenomicAlignments`.
+
+- `step1`-style metadata extraction maps naturally onto `scanBam()`-like
+  use cases.
+- `as = "GAlignments"` and `as = "GAlignmentPairs"` support
+  alignment-object workflows used downstream in Bioconductor.
+- `BiocParallel` integration preserves the standard file-level parallel
+  workflow model.
+
+The main added capability is that BamScale can also use multiple threads
+within each BAM file through `ompBAM`. That is the key difference from
+the baseline workflow pattern and the main reason it can remove
+read-parsing bottlenecks in workloads such as metadata extraction and
+alignment-object construction.
 
 ## Installation
 
@@ -104,52 +157,28 @@ When `auto_threads = TRUE`, BamScale preserves higher per-file thread
 counts when possible by reducing the number of concurrently active file
 workers before shrinking per-file threads.
 
-## Reproducibility and Output Equivalence
+## Benchmark Results and Reproducibility
 
-A dedicated vignette validates output comparability with Rsamtools:
+A dedicated benchmark article summarizes the current results and the
+relevant cross-tool comparisons:
 
-- `vignettes/output-comparison.Rmd`
-- compares `step1` fields and `seq+qual` fields in compatible mode
+- pkgdown article:
+  - <https://cparsania.github.io/BamScale/articles/benchmark-results.html>
+- source:
+  - `vignettes/benchmark-results.qmd`
 
-Render locally:
+The article includes:
 
-``` r
-rmarkdown::render("vignettes/output-comparison.Rmd")
-```
+- `step1`, `galignments`, and `seqqual` benchmark results
+- fair cross-package comparisons against `Rsamtools` and
+  `GenomicAlignments`
+- compact-versus-compatible `seqqual` results for BamScale
 
 ## Benchmarking
 
-Benchmark assets are in `inst/benchmarks/`:
+Benchmark workflow and benchmark reporting assets are documented in:
 
-- runner: `inst/benchmarks/run_server_benchmark.R`
-- report: `inst/benchmarks/benchmark_report.qmd`
-- protocol: `inst/benchmarks/README.md`
-
-The benchmark design separates two tracks:
-
-- `fair`: cross-package comparisons (BamScale vs
-  Rsamtools/GenomicAlignments)
-- `optimized`: BamScale-only optimizations (for example compact
-  `seq/qual`)
-
-This separation is intentional and avoids mixing optimization-only paths
-into cross-package claims.
-
-## Interpreting Worker vs Thread Scaling
-
-More workers do not always mean faster runtime at fixed total CPU
-budget.
-
-For multi-file BAM workloads, performance can drop when workers increase
-and per-worker threads shrink because of:
-
-- worker/process overhead,
-- memory and serialization pressure,
-- shared storage bandwidth contention.
-
-This behavior is not unique to BamScale and can appear with
-Rsamtools/GenomicAlignments multi-process patterns as well. Benchmark
-reporting should always state worker/thread allocation explicitly.
+- [inst/benchmarks/README.md](https://cparsania.github.io/BamScale/inst/benchmarks/README.md)
 
 ## Current Limitations
 
@@ -214,7 +243,7 @@ MIT (`LICENSE`).
 
 # Articles
 
-### All vignettes
+### Articles
 
-- [BamScale vs Rsamtools Output
-  Reproducibility](https://cparsania.github.io/BamScale/articles/output-comparison.md):
+- [Benchmarking BamScale Across Step1, GAlignments, and SeqQual
+  Workloads](https://cparsania.github.io/BamScale/articles/benchmark-results.md):

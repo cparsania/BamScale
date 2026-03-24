@@ -1,6 +1,6 @@
 # Articles
 
-### All vignettes
+### Articles
 
-- [BamScale vs Rsamtools Output
-  Reproducibility](https://cparsania.github.io/BamScale/articles/output-comparison.md):
+- [Benchmarking BamScale Across Step1, GAlignments, and SeqQual
+  Workloads](https://cparsania.github.io/BamScale/articles/benchmark-results.md):
