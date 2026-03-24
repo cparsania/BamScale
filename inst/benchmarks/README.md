@@ -2,6 +2,15 @@
 
 This folder contains a server-first benchmark workflow for BamScale with configurable compute budget and profiles.
 
+## Current benchmark assets
+
+- Final `step1` + `galignments` run:
+  - `inst/benchmarks/run_20260320_133141/`
+- Final `seqqual` run:
+  - `inst/benchmarks/run_20260320_162359/`
+- Pkgdown article source:
+  - `vignettes/benchmark-results.qmd`
+
 ## Benchmark tracks
 
 - `fair`: comparator-safe runs used for BamScale vs Rsamtools/GenomicAlignments comparisons.
@@ -64,11 +73,12 @@ Rscript inst/benchmarks/run_server_benchmark.R \
 
 If no BAM input is provided, the script resolves BAMs from `chipseqDBData::H3K9acData()`.
 
-## 2) Render report
+## 2) Render article/report
+
+Pkgdown article source:
 
 ```bash
-quarto render inst/benchmarks/benchmark_report.qmd \
-  -P results_dir:/path/to/benchmark_results/run_YYYYMMDD_HHMMSS
+/usr/local/bin/quarto render vignettes/benchmark-results.qmd
 ```
 
 ## Main outputs
@@ -79,6 +89,14 @@ quarto render inst/benchmarks/benchmark_report.qmd \
 - `config.txt`: parsed and effective config
 - `sessionInfo.txt`: reproducibility snapshot
 - `plot_single_scaling.png`, `plot_multi_scaling.png` (if `ggplot2` installed)
+
+## Current benchmark interpretation
+
+- `step1`: strong BamScale win in single-file mode and best-case multi-file mode; best multi-file plan favored low `W`, high `T`
+- `galignments`: strong BamScale win in both single-file and multi-file settings
+- `seqqual`:
+  - fair compatibility path remains slower than the best Rsamtools multi-file result
+  - compact mode substantially improves BamScale and produces the strongest single-file `seqqual` result
 
 ## Useful options
 

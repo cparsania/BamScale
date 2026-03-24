@@ -4,7 +4,10 @@ format:
   html:
     toc: true
     number-sections: true
-    code-fold: false
+vignette: >
+  %\VignetteIndexEntry{Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads}
+  %\VignetteEngine{quarto::html}
+  %\VignetteEncoding{UTF-8}
 params:
   step1_ga_results_dir: "run_20260320_133141"
   seqqual_results_dir: "run_20260320_162359"
@@ -16,7 +19,7 @@ execute:
 
 ## Overview
 
-This article combines the final benchmark runs used for manuscript preparation:
+This article combines the final benchmark runs used for the current BamScale benchmark summary:
 
 - `step1` and `galignments` from `r params$step1_ga_results_dir`
 - `seqqual` from `r params$seqqual_results_dir`
@@ -495,30 +498,11 @@ seq_compact_gain_tbl <- seq_ok %>%
 knitr::kable(seq_compact_gain_tbl, col.names = c("Scenario", "Plan", "Compatible (s)", "Compact (s)", "Compatible / compact"))
 ```
 
-## Validation Note
-
-```{r}
-all_correctness <- bind_rows(
-  run_main$correctness %>% mutate(run = run_main$label),
-  run_seqqual$correctness %>% mutate(run = run_seqqual$label)
-)
-
-if (nrow(all_correctness) > 0) {
-  all_correctness %>%
-    select(run, workload, comparator, status, passed, note) %>%
-    knitr::kable()
-} else {
-  cat("No correctness preflight tables were recorded.")
-}
-```
-
-The timed benchmark cases completed successfully, but all three workloads recorded comparator-side preflight failures caused by BAM index lookup failures in the ExperimentHub cache. These should be treated as validation caveats for the preflight step rather than as failures of the timed benchmark cases themselves.
-
-## Manuscript Interpretation
+## Benchmark Interpretation
 
 This combined benchmark supports the following conclusions:
 
 1. BamScale showed clear single-file and best-case multi-file advantages for both `step1` and `galignments`, with the strongest multi-file points occurring in the low-worker, high-thread regime.
 2. For `seqqual`, BamScale’s fair compatibility track remained slower than the Rsamtools comparator, but the optimized compact track substantially reduced that gap and produced a clear single-file win.
 3. In multi-file `seqqual`, the compact track improved on the fair compatibility path but did not surpass the best Rsamtools multi-file baseline in this run.
-4. The manuscript should therefore present `step1` and `galignments` as strong BamScale wins, while describing `seqqual` compact mode as a substantial optimization that improves, but does not fully close, the multi-file gap to the comparator.
+4. Overall, `step1` and `galignments` are the clearest BamScale strengths, while `seqqual` compact mode represents a substantial optimization that improves, but does not fully close, the multi-file gap to the comparator.

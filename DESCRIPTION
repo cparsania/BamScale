@@ -33,14 +33,16 @@ Suggests:
     ggplot2,
     IRanges,
     knitr,
+    quarto,
     rmarkdown,
     ompBAM,
     Rsamtools,
     S4Vectors,
     testthat (>= 3.0.0)
-VignetteBuilder: knitr
+VignetteBuilder:
+    quarto
 Config/testthat/edition: 3
-SystemRequirements: C++17, OpenMP
+SystemRequirements: C++17, OpenMP, quarto
 NeedsCompilation: yes
 URL: https://cparsania.github.io/BamScale/
 BugReports: https://github.com/cparsania/BamScale/issues
