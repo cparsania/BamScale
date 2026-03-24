@@ -1,7 +1,7 @@
 Package: BamScale
 Type: Package
 Title: Bioconductor-Friendly Multithreaded BAM Processing
-Version: 0.99.6
+Version: 0.99.7
 Authors@R: c(
     person("Chirag", "Parsania", email = "chirag.parsania@gmail.com", role = c("aut", "cre"))
   )
