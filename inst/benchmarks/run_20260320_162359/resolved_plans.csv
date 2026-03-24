@@ -1,0 +1,27 @@
+"outer_run","case_id","global_execution_rank","scenario","workload","method","comparison_track","auto_threads","threads_requested","threads_effective","bp_workers_requested","bp_workers_effective","total_threads_requested","total_threads_effective","bp_backend","effective_thread_fraction"
+1,1,1,"single","seqqual","BamScale","fair",FALSE,1,1,1,1,1,1,NA,1
+1,2,2,"single","seqqual","BamScale (compact seqqual)","optimized",FALSE,1,1,1,1,1,1,NA,1
+1,3,3,"single","seqqual","BamScale","fair",FALSE,4,4,1,1,4,4,NA,1
+1,4,4,"single","seqqual","BamScale (compact seqqual)","optimized",FALSE,4,4,1,1,4,4,NA,1
+1,5,5,"single","seqqual","BamScale","fair",FALSE,12,12,1,1,12,12,NA,1
+1,6,6,"single","seqqual","BamScale (compact seqqual)","optimized",FALSE,12,12,1,1,12,12,NA,1
+1,7,7,"single","seqqual","BamScale","fair",FALSE,24,24,1,1,24,24,NA,1
+1,8,8,"single","seqqual","BamScale (compact seqqual)","optimized",FALSE,24,24,1,1,24,24,NA,1
+1,9,9,"single","seqqual","BamScale","fair",FALSE,48,48,1,1,48,48,NA,1
+1,10,10,"single","seqqual","BamScale (compact seqqual)","optimized",FALSE,48,48,1,1,48,48,NA,1
+1,11,11,"single","seqqual","Rsamtools::scanBam","fair",FALSE,1,1,1,1,1,1,NA,1
+1,12,12,"multi","seqqual","BamScale (balanced budget)","fair",FALSE,48,48,1,1,48,48,"snow",1
+1,13,13,"multi","seqqual","BamScale (compact seqqual budget)","optimized",FALSE,48,48,1,1,48,48,"snow",1
+1,14,14,"multi","seqqual","Rsamtools::scanBam + BiocParallel","fair",FALSE,1,1,1,1,1,1,"snow",1
+1,15,15,"multi","seqqual","BamScale (balanced budget)","fair",FALSE,24,24,2,2,48,48,"snow",1
+1,16,16,"multi","seqqual","BamScale (compact seqqual budget)","optimized",FALSE,24,24,2,2,48,48,"snow",1
+1,17,17,"multi","seqqual","Rsamtools::scanBam + BiocParallel","fair",FALSE,1,1,2,2,2,2,"snow",1
+1,18,18,"multi","seqqual","BamScale (balanced budget)","fair",FALSE,12,12,4,4,48,48,"snow",1
+1,19,19,"multi","seqqual","BamScale (compact seqqual budget)","optimized",FALSE,12,12,4,4,48,48,"snow",1
+1,20,20,"multi","seqqual","Rsamtools::scanBam + BiocParallel","fair",FALSE,1,1,4,4,4,4,"snow",1
+1,21,21,"multi","seqqual","BamScale (balanced budget)","fair",FALSE,6,6,8,8,48,48,"snow",1
+1,22,22,"multi","seqqual","BamScale (compact seqqual budget)","optimized",FALSE,6,6,8,8,48,48,"snow",1
+1,23,23,"multi","seqqual","Rsamtools::scanBam + BiocParallel","fair",FALSE,1,1,8,8,8,8,"snow",1
+1,24,24,"multi","seqqual","BamScale (balanced budget)","fair",FALSE,4,4,12,12,48,48,"snow",1
+1,25,25,"multi","seqqual","BamScale (compact seqqual budget)","optimized",FALSE,4,4,12,12,48,48,"snow",1
+1,26,26,"multi","seqqual","Rsamtools::scanBam + BiocParallel","fair",FALSE,1,1,12,12,12,12,"snow",1

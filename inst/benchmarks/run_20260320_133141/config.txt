@@ -1,0 +1,59 @@
+# Parsed options
+.positional: 
+profile: balanced
+threads: 1,4,12,24,48
+workers: 1,2,4,8,12
+budget-threads: 48
+max-threads: 48
+n-files: 12
+outer-runs: 1
+iterations: 2
+warmup: true
+include-seqqual: false
+include-galignments: true
+include-auto-threads: false
+include-rsamtools: true
+include-multi: true
+single-workloads: step1,galignments
+multi-workloads: step1,galignments
+allow-repeat-files: true
+shuffle-cases: false
+correctness-preflight: true
+correctness-window-bp: 1000
+bp-backend: snow
+
+# Effective configuration
+outdir: benchmark_results
+profile: balanced
+detected_cores: 96
+budget_threads: 48
+n_files: 12
+outer_runs: 1
+iterations: 2
+warmup: TRUE
+max_threads: 48
+threads: 1,4,12,24,48
+workers: 1,2,4,8,12
+bp_backend: snow
+include_seqqual: FALSE
+seqqual_compact: FALSE
+include_galignments: TRUE
+include_auto_threads: FALSE
+include_multi: TRUE
+include_rsamtools: TRUE
+ensure_index: TRUE
+allow_repeat_files: TRUE
+recursive: TRUE
+single_workloads: step1,galignments
+multi_workloads: step1,galignments
+compute_records: TRUE
+shuffle_cases: FALSE
+shuffle_seed: 1
+correctness_preflight: TRUE
+correctness_window_bp: 1000
+correctness_stop_on_fail: FALSE
+baseline_results_dir: 
+regression_threshold_pct: 5
+regression_stop_on_fail: FALSE
+regression_scope: bamscale
+file_source: chipseqDBData

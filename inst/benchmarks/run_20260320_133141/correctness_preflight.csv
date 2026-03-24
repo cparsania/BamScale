@@ -1,0 +1,5 @@
+"workload","comparator","status","passed","seqname","start","end","columns_compared","bam_n","ref_n","same_nrow","identical_data","note"
+"step1","Rsamtools::scanBam","error",FALSE,"chrM",84,1083,NA,NA,NA,NA,NA,"failed to open BamFile: failed to load BAM index
+  file: /home/chiragp/.cache/R/ExperimentHub/134ab745547e62_2073"
+"galignments","GenomicAlignments::readGAlignments","error",FALSE,"chrM",84,1083,NA,NA,NA,NA,NA,"failed to open BamFile: failed to load BAM index
+  file: /home/chiragp/.cache/R/ExperimentHub/134ab745547e62_2073"
