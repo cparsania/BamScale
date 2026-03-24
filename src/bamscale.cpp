@@ -467,14 +467,14 @@ List read_bam_cpp(
     stop("Failed to read BAM header");
   }
 
-  PackedStringColumn qname_out;
+  std::vector<std::string> qname_out;
   std::vector<int> flag_out;
   std::vector<int> rname_out;
   std::vector<int> pos_out;
   std::vector<int> strand_out;
   std::vector<int> qwidth_out;
   std::vector<int> mapq_out;
-  PackedStringColumn cigar_out;
+  std::vector<std::string> cigar_out;
   std::vector<int> mrnm_out;
   std::vector<int> mpos_out;
   std::vector<int> isize_out;
@@ -487,14 +487,14 @@ List read_bam_cpp(
   size_t n_records_total = 0U;
 
   struct ThreadChunk {
-    PackedStringColumn qname;
+    std::vector<std::string> qname;
     std::vector<int> flag;
     std::vector<int> rname;
     std::vector<int> pos;
     std::vector<int> strand;
     std::vector<int> qwidth;
     std::vector<int> mapq;
-    PackedStringColumn cigar;
+    std::vector<std::string> cigar;
     std::vector<int> mrnm;
     std::vector<int> mpos;
     std::vector<int> isize;
@@ -515,14 +515,14 @@ List read_bam_cpp(
   const auto reserve_chunk = [&](ThreadChunk& local, const size_t hint) {
     if (hint == 0U) return;
 
-    if (need_qname) local.qname.reserve(hint, hint * 24U);
+    if (need_qname) local.qname.reserve(hint);
     if (need_flag) local.flag.reserve(hint);
     if (need_rname) local.rname.reserve(hint);
     if (need_pos) local.pos.reserve(hint);
     if (need_strand) local.strand.reserve(hint);
     if (need_qwidth) local.qwidth.reserve(hint);
     if (need_mapq) local.mapq.reserve(hint);
-    if (need_cigar) local.cigar.reserve(hint, hint * 16U);
+    if (need_cigar) local.cigar.reserve(hint);
     if (need_mrnm) local.mrnm.reserve(hint);
     if (need_mpos) local.mpos.reserve(hint);
     if (need_isize) local.isize.reserve(hint);
@@ -628,9 +628,9 @@ List read_bam_cpp(
         if (need_qname) {
           const char* qname_ptr = read.read_name();
           const uint8_t qname_len = read.l_read_name();
-          local.qname.append(
+          local.qname.emplace_back(
             qname_ptr,
-            qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U
+            qname_ptr + (qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U)
           );
         }
         if (need_flag) {
@@ -660,7 +660,7 @@ List read_bam_cpp(
         if (need_cigar) {
           cigar_scratch.clear();
           read.cigar(cigar_scratch);
-          local.cigar.append(cigar_scratch);
+          local.cigar.push_back(cigar_scratch);
         }
         if (need_mrnm) {
           const int32_t next_ref_id = read.next_refID();
@@ -726,26 +726,14 @@ List read_bam_cpp(
 
     if (batch_records > 0U) {
       const size_t target = n_records_total + batch_records;
-      if (need_qname) {
-        size_t batch_qname_bytes = 0U;
-        for (unsigned int tid = 0; tid < threads; ++tid) {
-          batch_qname_bytes += chunk_data[tid].qname.bytes_size();
-        }
-        qname_out.reserve(target, qname_out.bytes_size() + batch_qname_bytes);
-      }
+      if (need_qname) qname_out.reserve(target);
       if (need_flag) flag_out.reserve(target);
       if (need_rname) rname_out.reserve(target);
       if (need_pos) pos_out.reserve(target);
       if (need_strand) strand_out.reserve(target);
       if (need_qwidth) qwidth_out.reserve(target);
       if (need_mapq) mapq_out.reserve(target);
-      if (need_cigar) {
-        size_t batch_cigar_bytes = 0U;
-        for (unsigned int tid = 0; tid < threads; ++tid) {
-          batch_cigar_bytes += chunk_data[tid].cigar.bytes_size();
-        }
-        cigar_out.reserve(target, cigar_out.bytes_size() + batch_cigar_bytes);
-      }
+      if (need_cigar) cigar_out.reserve(target);
       if (need_mrnm) mrnm_out.reserve(target);
       if (need_mpos) mpos_out.reserve(target);
       if (need_isize) isize_out.reserve(target);
@@ -782,7 +770,11 @@ List read_bam_cpp(
       n_records_total += local.n_records;
 
       if (need_qname) {
-        qname_out.append_from(local.qname);
+        qname_out.insert(
+          qname_out.end(),
+          std::make_move_iterator(local.qname.begin()),
+          std::make_move_iterator(local.qname.end())
+        );
       }
       if (need_flag) {
         flag_out.insert(flag_out.end(), local.flag.begin(), local.flag.end());
@@ -811,7 +803,11 @@ List read_bam_cpp(
         mapq_out.insert(mapq_out.end(), local.mapq.begin(), local.mapq.end());
       }
       if (need_cigar) {
-        cigar_out.append_from(local.cigar);
+        cigar_out.insert(
+          cigar_out.end(),
+          std::make_move_iterator(local.cigar.begin()),
+          std::make_move_iterator(local.cigar.end())
+        );
       }
       if (need_mrnm) {
         mrnm_out.insert(
@@ -870,14 +866,14 @@ List read_bam_cpp(
 
   const int n = static_cast<int>(n_records_total);
   List out;
-  if (need_qname) out["qname"] = packed_strings_to_character(qname_out);
+  if (need_qname) out["qname"] = wrap(qname_out);
   if (need_flag) out["flag"] = wrap(flag_out);
   if (need_rname) out["rname"] = refs_from_ids(rname_out, chr_names);
   if (need_pos) out["pos"] = wrap(pos_out);
   if (need_strand) out["strand"] = strands_from_codes(strand_out);
   if (need_qwidth) out["qwidth"] = wrap(qwidth_out);
   if (need_mapq) out["mapq"] = wrap(mapq_out);
-  if (need_cigar) out["cigar"] = packed_strings_to_character(cigar_out);
+  if (need_cigar) out["cigar"] = wrap(cigar_out);
   if (need_mrnm) out["mrnm"] = refs_from_ids(mrnm_out, chr_names);
   if (need_mpos) out["mpos"] = wrap(mpos_out);
   if (need_isize) out["isize"] = wrap(isize_out);
