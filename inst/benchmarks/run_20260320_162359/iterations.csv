@@ -1,0 +1,53 @@
+"case_id","case_execution_id","outer_run","execution_rank","scenario","workload","method","method_family","comparison_track","seqqual_mode","auto_threads","threads_requested","threads_effective","bp_workers_requested","bp_workers_effective","total_threads_requested","total_threads_effective","bp_backend","iteration","elapsed_s","status","error_message"
+1,"001_01",1,1,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,1,1,1,1,1,1,NA,1,35.614,"ok",NA
+1,"001_01",1,1,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,1,1,1,1,1,1,NA,2,35.752,"ok",NA
+2,"002_01",1,2,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,1,1,1,1,1,1,NA,1,26.097,"ok",NA
+2,"002_01",1,2,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,1,1,1,1,1,1,NA,2,24.9630000000001,"ok",NA
+3,"003_01",1,3,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,4,4,1,1,4,4,NA,1,31.963,"ok",NA
+3,"003_01",1,3,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,4,4,1,1,4,4,NA,2,31.3929999999998,"ok",NA
+4,"004_01",1,4,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,4,4,1,1,4,4,NA,1,20.1950000000002,"ok",NA
+4,"004_01",1,4,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,4,4,1,1,4,4,NA,2,19.5609999999999,"ok",NA
+5,"005_01",1,5,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,12,12,1,1,12,12,NA,1,26.903,"ok",NA
+5,"005_01",1,5,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,12,12,1,1,12,12,NA,2,28.337,"ok",NA
+6,"006_01",1,6,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,12,12,1,1,12,12,NA,1,17.671,"ok",NA
+6,"006_01",1,6,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,12,12,1,1,12,12,NA,2,16.5259999999998,"ok",NA
+7,"007_01",1,7,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,24,24,1,1,24,24,NA,1,28.096,"ok",NA
+7,"007_01",1,7,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,24,24,1,1,24,24,NA,2,28.5820000000001,"ok",NA
+8,"008_01",1,8,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,24,24,1,1,24,24,NA,1,16.6390000000001,"ok",NA
+8,"008_01",1,8,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,24,24,1,1,24,24,NA,2,16.249,"ok",NA
+9,"009_01",1,9,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,48,48,1,1,48,48,NA,1,25.9839999999999,"ok",NA
+9,"009_01",1,9,"single","seqqual","BamScale","BamScale","fair","compatible",FALSE,48,48,1,1,48,48,NA,2,26.606,"ok",NA
+10,"010_01",1,10,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,48,48,1,1,48,48,NA,1,14.8419999999999,"ok",NA
+10,"010_01",1,10,"single","seqqual","BamScale (compact seqqual)","BamScale","optimized","compact",FALSE,48,48,1,1,48,48,NA,2,15.211,"ok",NA
+11,"011_01",1,11,"single","seqqual","Rsamtools::scanBam","Rsamtools","fair","compatible",FALSE,1,1,1,1,1,1,NA,1,24.0329999999999,"ok",NA
+11,"011_01",1,11,"single","seqqual","Rsamtools::scanBam","Rsamtools","fair","compatible",FALSE,1,1,1,1,1,1,NA,2,24.6219999999998,"ok",NA
+12,"012_01",1,12,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,48,48,1,1,48,48,"snow",1,181.379,"ok",NA
+12,"012_01",1,12,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,48,48,1,1,48,48,"snow",2,181.175,"ok",NA
+13,"013_01",1,13,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,48,48,1,1,48,48,"snow",1,158.122,"ok",NA
+13,"013_01",1,13,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,48,48,1,1,48,48,"snow",2,214.52,"ok",NA
+14,"014_01",1,14,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,1,1,1,1,"snow",1,191.144,"ok",NA
+14,"014_01",1,14,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,1,1,1,1,"snow",2,194.366,"ok",NA
+15,"015_01",1,15,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,24,24,2,2,48,48,"snow",1,585.393,"ok",NA
+15,"015_01",1,15,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,24,24,2,2,48,48,"snow",2,562.111000000001,"ok",NA
+16,"016_01",1,16,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,24,24,2,2,48,48,"snow",1,339.925,"ok",NA
+16,"016_01",1,16,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,24,24,2,2,48,48,"snow",2,335.267,"ok",NA
+17,"017_01",1,17,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,2,2,2,2,"snow",1,276.858,"ok",NA
+17,"017_01",1,17,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,2,2,2,2,"snow",2,269.384,"ok",NA
+18,"018_01",1,18,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,12,12,4,4,48,48,"snow",1,406.354000000001,"ok",NA
+18,"018_01",1,18,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,12,12,4,4,48,48,"snow",2,402.012000000001,"ok",NA
+19,"019_01",1,19,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,12,12,4,4,48,48,"snow",1,246.762999999999,"ok",NA
+19,"019_01",1,19,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,12,12,4,4,48,48,"snow",2,236.286,"ok",NA
+20,"020_01",1,20,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,4,4,4,4,"snow",1,217.578000000001,"ok",NA
+20,"020_01",1,20,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,4,4,4,4,"snow",2,204.765000000001,"ok",NA
+21,"021_01",1,21,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,6,6,8,8,48,48,"snow",1,356.835000000001,"ok",NA
+21,"021_01",1,21,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,6,6,8,8,48,48,"snow",2,366.665999999999,"ok",NA
+22,"022_01",1,22,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,6,6,8,8,48,48,"snow",1,203.642999999998,"ok",NA
+22,"022_01",1,22,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,6,6,8,8,48,48,"snow",2,216.938,"ok",NA
+23,"023_01",1,23,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,8,8,8,8,"snow",1,171.379000000001,"ok",NA
+23,"023_01",1,23,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,8,8,8,8,"snow",2,174.509,"ok",NA
+24,"024_01",1,24,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,4,4,12,12,48,48,"snow",1,267.579,"ok",NA
+24,"024_01",1,24,"multi","seqqual","BamScale (balanced budget)","BamScale","fair","compatible",FALSE,4,4,12,12,48,48,"snow",2,274.198,"ok",NA
+25,"025_01",1,25,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,4,4,12,12,48,48,"snow",1,184.732,"ok",NA
+25,"025_01",1,25,"multi","seqqual","BamScale (compact seqqual budget)","BamScale","optimized","compact",FALSE,4,4,12,12,48,48,"snow",2,166.17,"ok",NA
+26,"026_01",1,26,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,12,12,12,12,"snow",1,133.83,"ok",NA
+26,"026_01",1,26,"multi","seqqual","Rsamtools::scanBam + BiocParallel","Rsamtools","fair","compatible",FALSE,1,1,12,12,12,12,"snow",2,135.504000000001,"ok",NA

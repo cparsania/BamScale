@@ -1,0 +1,3 @@
+"scenario","workload","n_files","n_records","total_mb"
+"multi","seqqual",12,132482148,4203.37045669556
+"single","seqqual",1,16675372,548.338485717773

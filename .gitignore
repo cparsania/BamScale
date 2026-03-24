@@ -63,3 +63,8 @@ vignettes/.quarto/
 docs
 inst/benchmarks/bamscale_intro_presentation_edits.pptx
 BamScale.BiocCheck/00BiocCheck.log
+inst/benchmarks/~$benchmark_presentation.pptx
+inst/benchmarks/benchmark_presentation.pptx
+inst/benchmarks/benchmark_presentation_reference_century_gothic.pptx
+inst/benchmarks/benchmark_presentation_reference.pptx
+inst/benchmarks/benchmark_presentation.qmd

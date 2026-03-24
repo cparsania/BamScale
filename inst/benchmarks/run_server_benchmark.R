@@ -143,6 +143,19 @@ as_chr_vec <- function(x, default = character()) {
   unique(vals)
 }
 
+validate_workload_selection <- function(selected, allowed, arg_name) {
+  unknown <- setdiff(selected, allowed)
+  if (length(unknown) > 0L) {
+    stop(
+      arg_name, " contains unsupported workload(s): ",
+      paste(unknown, collapse = ", "),
+      ". Allowed: ", paste(allowed, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  selected
+}
+
 require_or_stop <- function(pkg) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     stop("Missing required package: ", pkg, call. = FALSE)
@@ -1528,6 +1541,7 @@ if (profile == "bamscale_showcase") {
   default_include_galignments <- FALSE
   default_include_auto_threads <- FALSE
   default_include_rsamtools <- TRUE
+  default_single_workloads <- c("step1")
   default_multi_workloads <- c("step1")
 } else if (profile == "balanced") {
   default_n_files <- 12L
@@ -1538,6 +1552,7 @@ if (profile == "bamscale_showcase") {
   default_include_galignments <- TRUE
   default_include_auto_threads <- TRUE
   default_include_rsamtools <- TRUE
+  default_single_workloads <- c("step1", "seqqual", "galignments")
   default_multi_workloads <- c("step1", "seqqual")
 } else {
   default_n_files <- 16L
@@ -1548,6 +1563,7 @@ if (profile == "bamscale_showcase") {
   default_include_galignments <- TRUE
   default_include_auto_threads <- TRUE
   default_include_rsamtools <- TRUE
+  default_single_workloads <- c("step1", "seqqual", "galignments")
   default_multi_workloads <- c("step1", "seqqual", "galignments")
 }
 
@@ -1585,9 +1601,10 @@ cfg <- list(
   ensure_index = as_bool(opts[["ensure-index"]], TRUE),
   allow_repeat_files = as_bool(opts[["allow-repeat-files"]], FALSE),
   recursive = as_bool(opts$recursive, TRUE),
+  single_workloads = as_chr_vec(opts[["single-workloads"]], default_single_workloads),
   multi_workloads = as_chr_vec(opts[["multi-workloads"]], default_multi_workloads),
   compute_records = as_bool(opts[["compute-records"]], TRUE),
-  shuffle_cases = as_bool(opts[["shuffle-cases"]], TRUE),
+  shuffle_cases = as_bool(opts[["shuffle-cases"]], FALSE),
   shuffle_seed = as_int_scalar(opts[["shuffle-seed"]], 1L),
   correctness_preflight = as_bool(opts[["correctness-preflight"]], TRUE),
   correctness_window_bp = as_int_scalar(opts[["correctness-window-bp"]], 1000L),
@@ -1717,17 +1734,30 @@ workloads <- list(
   )
 )
 
-active_workloads <- c("step1")
-if (isTRUE(cfg$include_seqqual)) active_workloads <- c(active_workloads, "seqqual")
-if (isTRUE(cfg$include_galignments)) active_workloads <- c(active_workloads, "galignments")
+allowed_workloads <- c("step1")
+if (isTRUE(cfg$include_seqqual)) allowed_workloads <- c(allowed_workloads, "seqqual")
+if (isTRUE(cfg$include_galignments)) allowed_workloads <- c(allowed_workloads, "galignments")
+allowed_workloads <- unique(allowed_workloads)
 
-cfg$multi_workloads <- unique(intersect(cfg$multi_workloads, active_workloads))
-if (length(cfg$multi_workloads) == 0L) cfg$multi_workloads <- "step1"
+cfg$single_workloads <- validate_workload_selection(cfg$single_workloads, names(workloads), "--single-workloads")
+cfg$multi_workloads <- validate_workload_selection(cfg$multi_workloads, names(workloads), "--multi-workloads")
+
+cfg$single_workloads <- unique(intersect(cfg$single_workloads, allowed_workloads))
+cfg$multi_workloads <- unique(intersect(cfg$multi_workloads, allowed_workloads))
+
+if (length(cfg$single_workloads) == 0L) {
+  stop("No active single-file workloads remain after applying include flags", call. = FALSE)
+}
+if (isTRUE(cfg$include_multi) && length(cfg$multi_workloads) == 0L) {
+  stop("No active multi-file workloads remain after applying include flags", call. = FALSE)
+}
 
 message("Single-file benchmark target: ", single_file)
 message("Multi-file count: ", length(multi_files))
 message(paste0("Threads grid (<= max_threads=", cfg$max_threads, "): ", paste(cfg$threads, collapse = ", ")))
 message("Workers grid: ", paste(cfg$workers, collapse = ", "))
+message("Single workloads: ", paste(cfg$single_workloads, collapse = ", "))
+message("Multi workloads: ", paste(cfg$multi_workloads, collapse = ", "))
 message("Profile: ", cfg$profile)
 message("Budget threads: ", cfg$budget_threads, " | Detected cores: ", cfg$detected_cores)
 message("BiocParallel backend: ", cfg$bp_backend)
@@ -1744,10 +1774,10 @@ if (nzchar(cfg$baseline_results_dir)) {
 single_mb <- as.numeric(file.size(single_file) / 1024^2)
 multi_mb <- as.numeric(sum(file.size(multi_files)) / 1024^2)
 
-single_records <- setNames(rep(NA_real_, length(active_workloads)), active_workloads)
+single_records <- setNames(rep(NA_real_, length(cfg$single_workloads)), cfg$single_workloads)
 if (isTRUE(cfg$compute_records)) {
   message("Computing single-file record counts...")
-  for (w in active_workloads) {
+  for (w in cfg$single_workloads) {
     spec <- workloads[[w]]
     ref <- BamScale::bam_read(
       file = single_file,
@@ -1783,7 +1813,7 @@ message("Running correctness preflight...")
 correctness_preflight <- run_correctness_preflight(
   single_file = single_file,
   workloads = workloads,
-  active_workloads = active_workloads,
+  active_workloads = cfg$single_workloads,
   cfg = cfg,
   out_dir = out_dir
 )
@@ -1840,7 +1870,7 @@ append_case <- function(meta, runner) {
   invisible(NULL)
 }
 
-for (w in active_workloads) {
+for (w in cfg$single_workloads) {
   spec <- workloads[[w]]
 
   for (t in cfg$threads) {

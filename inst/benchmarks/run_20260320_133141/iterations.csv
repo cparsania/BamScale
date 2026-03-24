@@ -1,0 +1,65 @@
+"case_id","case_execution_id","outer_run","execution_rank","scenario","workload","method","method_family","comparison_track","seqqual_mode","auto_threads","threads_requested","threads_effective","bp_workers_requested","bp_workers_effective","total_threads_requested","total_threads_effective","bp_backend","iteration","elapsed_s","status","error_message"
+1,"001_01",1,1,"single","step1","BamScale","BamScale","fair",NA,FALSE,1,1,1,1,1,1,NA,1,16.3190000000001,"ok",NA
+1,"001_01",1,1,"single","step1","BamScale","BamScale","fair",NA,FALSE,1,1,1,1,1,1,NA,2,16.3810000000001,"ok",NA
+2,"002_01",1,2,"single","step1","BamScale","BamScale","fair",NA,FALSE,4,4,1,1,4,4,NA,1,11.071,"ok",NA
+2,"002_01",1,2,"single","step1","BamScale","BamScale","fair",NA,FALSE,4,4,1,1,4,4,NA,2,11.0419999999999,"ok",NA
+3,"003_01",1,3,"single","step1","BamScale","BamScale","fair",NA,FALSE,12,12,1,1,12,12,NA,1,9.05700000000002,"ok",NA
+3,"003_01",1,3,"single","step1","BamScale","BamScale","fair",NA,FALSE,12,12,1,1,12,12,NA,2,9.69800000000009,"ok",NA
+4,"004_01",1,4,"single","step1","BamScale","BamScale","fair",NA,FALSE,24,24,1,1,24,24,NA,1,9.11099999999999,"ok",NA
+4,"004_01",1,4,"single","step1","BamScale","BamScale","fair",NA,FALSE,24,24,1,1,24,24,NA,2,8.84799999999996,"ok",NA
+5,"005_01",1,5,"single","step1","BamScale","BamScale","fair",NA,FALSE,48,48,1,1,48,48,NA,1,8.17500000000007,"ok",NA
+5,"005_01",1,5,"single","step1","BamScale","BamScale","fair",NA,FALSE,48,48,1,1,48,48,NA,2,7.89499999999998,"ok",NA
+6,"006_01",1,6,"single","step1","Rsamtools::scanBam","Rsamtools","fair",NA,FALSE,1,1,1,1,1,1,NA,1,15.437,"ok",NA
+6,"006_01",1,6,"single","step1","Rsamtools::scanBam","Rsamtools","fair",NA,FALSE,1,1,1,1,1,1,NA,2,15.369,"ok",NA
+7,"007_01",1,7,"single","galignments","BamScale","BamScale","fair",NA,FALSE,1,1,1,1,1,1,NA,1,11.0849999999999,"ok",NA
+7,"007_01",1,7,"single","galignments","BamScale","BamScale","fair",NA,FALSE,1,1,1,1,1,1,NA,2,10.996,"ok",NA
+8,"008_01",1,8,"single","galignments","BamScale","BamScale","fair",NA,FALSE,4,4,1,1,4,4,NA,1,6.654,"ok",NA
+8,"008_01",1,8,"single","galignments","BamScale","BamScale","fair",NA,FALSE,4,4,1,1,4,4,NA,2,6.59199999999998,"ok",NA
+9,"009_01",1,9,"single","galignments","BamScale","BamScale","fair",NA,FALSE,12,12,1,1,12,12,NA,1,4.6930000000001,"ok",NA
+9,"009_01",1,9,"single","galignments","BamScale","BamScale","fair",NA,FALSE,12,12,1,1,12,12,NA,2,4.82400000000007,"ok",NA
+10,"010_01",1,10,"single","galignments","BamScale","BamScale","fair",NA,FALSE,24,24,1,1,24,24,NA,1,4.16499999999996,"ok",NA
+10,"010_01",1,10,"single","galignments","BamScale","BamScale","fair",NA,FALSE,24,24,1,1,24,24,NA,2,4.21900000000005,"ok",NA
+11,"011_01",1,11,"single","galignments","BamScale","BamScale","fair",NA,FALSE,48,48,1,1,48,48,NA,1,4.12100000000009,"ok",NA
+11,"011_01",1,11,"single","galignments","BamScale","BamScale","fair",NA,FALSE,48,48,1,1,48,48,NA,2,3.97300000000007,"ok",NA
+12,"012_01",1,12,"single","galignments","GenomicAlignments::readGAlignments","GenomicAlignments","fair",NA,FALSE,1,1,1,1,1,1,NA,1,10.653,"ok",NA
+12,"012_01",1,12,"single","galignments","GenomicAlignments::readGAlignments","GenomicAlignments","fair",NA,FALSE,1,1,1,1,1,1,NA,2,10.4829999999999,"ok",NA
+13,"013_01",1,13,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,48,48,1,1,48,48,"snow",1,68.48,"ok",NA
+13,"013_01",1,13,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,48,48,1,1,48,48,"snow",2,68.4570000000001,"ok",NA
+14,"014_01",1,14,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,1,1,1,1,"snow",1,124.037,"ok",NA
+14,"014_01",1,14,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,1,1,1,1,"snow",2,124.001,"ok",NA
+15,"015_01",1,15,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,24,24,2,2,48,48,"snow",1,194.1,"ok",NA
+15,"015_01",1,15,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,24,24,2,2,48,48,"snow",2,196.738,"ok",NA
+16,"016_01",1,16,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,2,2,2,2,"snow",1,207.8,"ok",NA
+16,"016_01",1,16,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,2,2,2,2,"snow",2,208.081,"ok",NA
+17,"017_01",1,17,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,12,12,4,4,48,48,"snow",1,158.071,"ok",NA
+17,"017_01",1,17,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,12,12,4,4,48,48,"snow",2,156.429,"ok",NA
+18,"018_01",1,18,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,4,4,4,4,"snow",1,151.641,"ok",NA
+18,"018_01",1,18,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,4,4,4,4,"snow",2,155.016,"ok",NA
+19,"019_01",1,19,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,6,6,8,8,48,48,"snow",1,142.577,"ok",NA
+19,"019_01",1,19,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,6,6,8,8,48,48,"snow",2,143.183,"ok",NA
+20,"020_01",1,20,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,8,8,8,8,"snow",1,127.148999999999,"ok",NA
+20,"020_01",1,20,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,8,8,8,8,"snow",2,129.64,"ok",NA
+21,"021_01",1,21,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,4,4,12,12,48,48,"snow",1,113.691000000001,"ok",NA
+21,"021_01",1,21,"multi","step1","BamScale (balanced budget)","BamScale","fair",NA,FALSE,4,4,12,12,48,48,"snow",2,114.135,"ok",NA
+22,"022_01",1,22,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,12,12,12,12,"snow",1,108.779,"ok",NA
+22,"022_01",1,22,"multi","step1","Rsamtools::scanBam + BiocParallel","Rsamtools","fair",NA,FALSE,1,1,12,12,12,12,"snow",2,106.983999999999,"ok",NA
+23,"023_01",1,23,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,48,48,1,1,48,48,"snow",1,60.9219999999996,"ok",NA
+23,"023_01",1,23,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,48,48,1,1,48,48,"snow",2,61.4860000000008,"ok",NA
+24,"024_01",1,24,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,1,1,1,1,"snow",1,117.036,"ok",NA
+24,"024_01",1,24,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,1,1,1,1,"snow",2,117.139999999999,"ok",NA
+25,"025_01",1,25,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,24,24,2,2,48,48,"snow",1,145.344,"ok",NA
+25,"025_01",1,25,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,24,24,2,2,48,48,"snow",2,144.673,"ok",NA
+26,"026_01",1,26,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,2,2,2,2,"snow",1,182.067,"ok",NA
+26,"026_01",1,26,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,2,2,2,2,"snow",2,181.39,"ok",NA
+27,"027_01",1,27,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,12,12,4,4,48,48,"snow",1,109.95,"ok",NA
+27,"027_01",1,27,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,12,12,4,4,48,48,"snow",2,113.058,"ok",NA
+28,"028_01",1,28,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,4,4,4,4,"snow",1,136.234,"ok",NA
+28,"028_01",1,28,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,4,4,4,4,"snow",2,135.073,"ok",NA
+29,"029_01",1,29,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,6,6,8,8,48,48,"snow",1,97.9589999999998,"ok",NA
+29,"029_01",1,29,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,6,6,8,8,48,48,"snow",2,104.163,"ok",NA
+30,"030_01",1,30,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,8,8,8,8,"snow",1,116.621000000001,"ok",NA
+30,"030_01",1,30,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,8,8,8,8,"snow",2,115.731,"ok",NA
+31,"031_01",1,31,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,4,4,12,12,48,48,"snow",1,75.3510000000006,"ok",NA
+31,"031_01",1,31,"multi","galignments","BamScale (balanced budget)","BamScale","fair",NA,FALSE,4,4,12,12,48,48,"snow",2,75.9099999999999,"ok",NA
+32,"032_01",1,32,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,12,12,12,12,"snow",1,89.1970000000001,"ok",NA
+32,"032_01",1,32,"multi","galignments","GenomicAlignments::readGAlignments + BiocParallel","GenomicAlignments","fair",NA,FALSE,1,1,12,12,12,12,"snow",2,92.357,"ok",NA

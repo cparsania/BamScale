@@ -1,0 +1,5 @@
+"scenario","workload","n_files","n_records","total_mb"
+"multi","galignments",12,77543925,4203.37045669556
+"multi","step1",12,132482148,4203.37045669556
+"single","galignments",1,4670364,548.338485717773
+"single","step1",1,16675372,548.338485717773
