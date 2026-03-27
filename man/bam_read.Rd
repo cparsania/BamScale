@@ -52,8 +52,13 @@ fields are requested:
 \itemize{
 \item \code{"compatible"} (default): return character vectors matching
 \code{scanBam}-style expectations,
-\item \code{"compact"}: return raw list-columns for faster/lower-overhead
-extraction. This mode is currently supported for
+\item \code{"compact"}: return lower-level raw list-columns for faster/lower-overhead
+extraction. In compact mode, \code{seq} is returned as one \code{raw} vector per read
+containing BAM-native packed sequence bytes (two bases per byte), and
+\code{qual} is returned as one \code{raw} vector per read containing per-base Phred
+bytes. These are not plain character strings. \code{qwidth} is needed to decode
+compact \code{seq} back to base letters, and \code{qual} values of \code{255} correspond to
+missing quality values. This mode is currently supported for
 \code{as = "data.frame"} or \code{as = "DataFrame"}.
 }}
 
@@ -115,7 +120,13 @@ requirements into required-set and required-unset bit masks.
 \item Tag values are returned as character columns. Scalar tags are scalar
 strings; \code{B} tags are comma-separated vectors.
 \item \code{seqqual_mode = "compact"} is optimized for throughput-oriented
-benchmarking and returns raw list-columns for \code{seq}/\code{qual}.
+benchmarking and returns raw list-columns for \code{seq}/\code{qual}, not ordinary
+sequence or quality strings. In this representation, \code{seq} contains
+BAM-packed nucleotide bytes and \code{qual} contains raw Phred bytes. Compact
+output is intended for users who want to defer or avoid full
+string-materialization costs; use \code{decode_compact_seq()},
+\code{decode_compact_qual()}, or \code{decode_seqqual_compact()} to decode compact
+output back to standard string form when needed.
 \item \code{"GAlignments"} and \code{"GAlignmentPairs"} output exclude unmapped records.
 \item \code{as = "scanBam"} returns a strict scan-like list-of-lists:
 without \code{param$which}, it returns one unnamed batch; with \code{param$which},

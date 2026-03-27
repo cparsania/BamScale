@@ -400,6 +400,115 @@ bool match_interval(
 }  // namespace
 
 // [[Rcpp::export]]
+CharacterVector decode_compact_seq_cpp(const List& seq_raw, const IntegerVector& qwidth) {
+  static const char nt16_map[16] = {
+    '=', 'A', 'C', 'M',
+    'G', 'R', 'S', 'V',
+    'T', 'W', 'Y', 'H',
+    'K', 'D', 'B', 'N'
+  };
+
+  const R_xlen_t n = seq_raw.size();
+  if (qwidth.size() != n) {
+    stop("`seq` and `qwidth` must have the same length");
+  }
+
+  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+  SEXP empty = Rf_mkCharLen("", 0);
+
+  for (R_xlen_t i = 0; i < n; ++i) {
+    const int width = qwidth[i];
+
+    if (width == NA_INTEGER) {
+      SET_STRING_ELT(out, i, NA_STRING);
+      continue;
+    }
+    if (width < 0) {
+      UNPROTECT(1);
+      stop("`qwidth` must be non-negative");
+    }
+    if (width == 0) {
+      SET_STRING_ELT(out, i, empty);
+      continue;
+    }
+
+    SEXP elt = seq_raw[i];
+    if (TYPEOF(elt) != RAWSXP) {
+      UNPROTECT(1);
+      stop("Compact `seq` must be a list of raw vectors");
+    }
+
+    RawVector src(elt);
+    const int needed = (width + 1) / 2;
+    if (src.size() < needed) {
+      UNPROTECT(1);
+      stop("Compact `seq` entry is shorter than required by `qwidth`");
+    }
+
+    std::string decoded;
+    decoded.resize(static_cast<size_t>(width));
+    int j = 0;
+    for (int k = 0; k < needed && j < width; ++k) {
+      const uint8_t byte = src[static_cast<R_xlen_t>(k)];
+      decoded[static_cast<size_t>(j++)] = nt16_map[(byte >> 4) & 0x0F];
+      if (j < width) {
+        decoded[static_cast<size_t>(j++)] = nt16_map[byte & 0x0F];
+      }
+    }
+
+    SET_STRING_ELT(out, i, Rf_mkCharLen(decoded.data(), width));
+  }
+
+  UNPROTECT(1);
+  return CharacterVector(out);
+}
+
+// [[Rcpp::export]]
+CharacterVector decode_compact_qual_cpp(const List& qual_raw) {
+  const R_xlen_t n = qual_raw.size();
+  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+  SEXP empty = Rf_mkCharLen("", 0);
+  SEXP star = Rf_mkCharLen("*", 1);
+
+  for (R_xlen_t i = 0; i < n; ++i) {
+    SEXP elt = qual_raw[i];
+    if (TYPEOF(elt) != RAWSXP) {
+      UNPROTECT(1);
+      stop("Compact `qual` must be a list of raw vectors");
+    }
+
+    RawVector src(elt);
+    const R_xlen_t len = src.size();
+
+    if (len == 0) {
+      SET_STRING_ELT(out, i, empty);
+      continue;
+    }
+
+    bool missing = true;
+    std::string decoded;
+    decoded.resize(static_cast<size_t>(len));
+    for (R_xlen_t j = 0; j < len; ++j) {
+      const uint8_t q = src[j];
+      if (q != 255U) {
+        missing = false;
+      }
+      const uint8_t phred = (q == 255U) ? 0U : q;
+      decoded[static_cast<size_t>(j)] = static_cast<char>(phred + 33U);
+    }
+
+    if (missing) {
+      SET_STRING_ELT(out, i, star);
+    } else {
+      SET_STRING_ELT(out, i, Rf_mkCharLen(decoded.data(), static_cast<int>(len)));
+    }
+  }
+
+  UNPROTECT(1);
+  return CharacterVector(out);
+}
+
+// [[Rcpp::export]]
 List read_bam_cpp(
     const std::string& bam_file,
     const int n_threads,

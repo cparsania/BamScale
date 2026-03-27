@@ -2,5 +2,8 @@
 
 export(bam_count)
 export(bam_read)
+export(decode_compact_qual)
+export(decode_compact_seq)
+export(decode_seqqual_compact)
 importFrom(Rcpp,evalCpp)
 useDynLib(BamScale, .registration = TRUE)

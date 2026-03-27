@@ -10,6 +10,29 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
+// decode_compact_seq_cpp
+CharacterVector decode_compact_seq_cpp(const List& seq_raw, const IntegerVector& qwidth);
+RcppExport SEXP _BamScale_decode_compact_seq_cpp(SEXP seq_rawSEXP, SEXP qwidthSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const List& >::type seq_raw(seq_rawSEXP);
+    Rcpp::traits::input_parameter< const IntegerVector& >::type qwidth(qwidthSEXP);
+    rcpp_result_gen = Rcpp::wrap(decode_compact_seq_cpp(seq_raw, qwidth));
+    return rcpp_result_gen;
+END_RCPP
+}
+// decode_compact_qual_cpp
+CharacterVector decode_compact_qual_cpp(const List& qual_raw);
+RcppExport SEXP _BamScale_decode_compact_qual_cpp(SEXP qual_rawSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const List& >::type qual_raw(qual_rawSEXP);
+    rcpp_result_gen = Rcpp::wrap(decode_compact_qual_cpp(qual_raw));
+    return rcpp_result_gen;
+END_RCPP
+}
 // read_bam_cpp
 List read_bam_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const bool include_unmapped, const bool include_seq, const bool include_qual, const bool compact_seqqual, const int flag_require_set, const int flag_require_unset, const CharacterVector& tag_names_r, const CharacterVector& which_seqnames, const IntegerVector& which_starts, const IntegerVector& which_ends, const CharacterVector& which_labels, const bool with_which_label, const int field_mask);
 RcppExport SEXP _BamScale_read_bam_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP include_unmappedSEXP, SEXP include_seqSEXP, SEXP include_qualSEXP, SEXP compact_seqqualSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP, SEXP tag_names_rSEXP, SEXP which_seqnamesSEXP, SEXP which_startsSEXP, SEXP which_endsSEXP, SEXP which_labelsSEXP, SEXP with_which_labelSEXP, SEXP field_maskSEXP) {
@@ -57,6 +80,8 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_BamScale_decode_compact_seq_cpp", (DL_FUNC) &_BamScale_decode_compact_seq_cpp, 2},
+    {"_BamScale_decode_compact_qual_cpp", (DL_FUNC) &_BamScale_decode_compact_qual_cpp, 1},
     {"_BamScale_read_bam_cpp", (DL_FUNC) &_BamScale_read_bam_cpp, 16},
     {"_BamScale_count_bam_cpp", (DL_FUNC) &_BamScale_count_bam_cpp, 9},
     {NULL, NULL, 0}

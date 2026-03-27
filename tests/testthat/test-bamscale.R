@@ -236,3 +236,129 @@ test_that("auto_threads keeps multiple workers when requested per-file threads a
   expect_equal(plan$bp_workers, expected_workers)
   expect_lte(plan$threads * plan$bp_workers, max(1L, BamScale:::.bamscale_detect_cores()))
 })
+
+test_that("compact decode helpers decode synthetic seq and qual correctly", {
+  seq_raw <- list(
+    as.raw(c(0x12, 0x48)), # A C G T
+    as.raw(c(0xFF)),       # N N
+    raw()
+  )
+  qwidth <- c(4L, 2L, 0L)
+
+  qual_raw <- list(
+    as.raw(c(0L, 1L, 2L, 3L)),
+    as.raw(c(255L, 255L)),
+    raw()
+  )
+
+  expect_identical(
+    decode_compact_seq(seq_raw, qwidth),
+    c("ACGT", "NN", "")
+  )
+
+  expect_identical(
+    decode_compact_qual(qual_raw),
+    c("!\"#$", "*", "")
+  )
+})
+
+test_that("compact decode helpers validate malformed inputs", {
+  expect_error(
+    decode_compact_seq(list(as.raw(c(0x12))), integer()),
+    "`seq` and `qwidth` must have the same length"
+  )
+
+  expect_error(
+    decode_compact_seq("not-a-list", 1L),
+    "`seq` must be a list of raw vectors"
+  )
+
+  expect_error(
+    decode_compact_qual("not-a-list"),
+    "`qual` must be a list of raw vectors"
+  )
+
+  expect_error(
+    decode_seqqual_compact(data.frame(seq = I(list(as.raw(c(0x12)))))),
+    "requires a `qwidth` column"
+  )
+})
+
+test_that("decode_seqqual_compact preserves non-seqqual columns", {
+  x <- data.frame(
+    qname = "r1",
+    qwidth = 4L,
+    mapq = 42L,
+    stringsAsFactors = FALSE
+  )
+  x$seq <- I(list(as.raw(c(0x12, 0x48))))
+  x$qual <- I(list(as.raw(c(0L, 1L, 2L, 3L))))
+
+  y <- decode_seqqual_compact(x)
+
+  expect_identical(y$qname, x$qname)
+  expect_identical(y$qwidth, x$qwidth)
+  expect_identical(y$mapq, x$mapq)
+  expect_identical(y$seq, "ACGT")
+  expect_identical(y$qual, "!\"#$")
+})
+
+test_that("compact seqqual round-trips to BamScale compatible output", {
+  skip_if_not_installed("ompBAM")
+
+  bam <- ompBAM::example_BAM("Unsorted")
+
+  compat <- bam_read(
+    file = bam,
+    what = c("qname", "qwidth", "seq", "qual"),
+    as = "data.frame",
+    seqqual_mode = "compatible",
+    threads = 1
+  )
+
+  compact <- bam_read(
+    file = bam,
+    what = c("qname", "qwidth", "seq", "qual"),
+    as = "data.frame",
+    seqqual_mode = "compact",
+    threads = 1
+  )
+
+  expect_true(is.list(compact$seq))
+  expect_true(is.list(compact$qual))
+  expect_true(all(vapply(compact$seq, is.raw, logical(1))))
+  expect_true(all(vapply(compact$qual, is.raw, logical(1))))
+
+  decoded <- decode_seqqual_compact(compact)
+
+  expect_identical(decoded$qname, compat$qname)
+  expect_identical(decoded$qwidth, compat$qwidth)
+  expect_identical(decoded$seq, compat$seq)
+  expect_identical(decoded$qual, compat$qual)
+})
+
+test_that("compact seqqual decode matches Rsamtools sequence and quality output", {
+  skip_if_not_installed("ompBAM")
+  skip_if_not_installed("Rsamtools")
+  skip_if_not_installed("Biostrings")
+
+  bam <- ompBAM::example_BAM("Unsorted")
+
+  compact <- bam_read(
+    file = bam,
+    what = c("qname", "qwidth", "seq", "qual"),
+    as = "data.frame",
+    seqqual_mode = "compact",
+    threads = 1
+  )
+  decoded <- decode_seqqual_compact(compact)
+
+  rs <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = c("qname", "seq", "qual"))
+  )[[1]]
+
+  expect_identical(decoded$qname, rs$qname)
+  expect_identical(decoded$seq, as.character(rs$seq))
+  expect_identical(decoded$qual, as.character(rs$qual))
+})

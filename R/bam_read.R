@@ -51,8 +51,13 @@
 #'   fields are requested:
 #' - `"compatible"` (default): return character vectors matching
 #'   `scanBam`-style expectations,
-#' - `"compact"`: return raw list-columns for faster/lower-overhead
-#'   extraction. This mode is currently supported for
+#' - `"compact"`: return lower-level raw list-columns for faster/lower-overhead
+#'   extraction. In compact mode, `seq` is returned as one `raw` vector per read
+#'   containing BAM-native packed sequence bytes (two bases per byte), and
+#'   `qual` is returned as one `raw` vector per read containing per-base Phred
+#'   bytes. These are not plain character strings. `qwidth` is needed to decode
+#'   compact `seq` back to base letters, and `qual` values of `255` correspond to
+#'   missing quality values. This mode is currently supported for
 #'   `as = "data.frame"` or `as = "DataFrame"`.
 #' @param threads Requested number of OpenMP threads used for
 #'   reading/decompression. May be capped when `auto_threads = TRUE`.
@@ -98,7 +103,13 @@
 #' - Tag values are returned as character columns. Scalar tags are scalar
 #'   strings; `B` tags are comma-separated vectors.
 #' - `seqqual_mode = "compact"` is optimized for throughput-oriented
-#'   benchmarking and returns raw list-columns for `seq`/`qual`.
+#'   benchmarking and returns raw list-columns for `seq`/`qual`, not ordinary
+#'   sequence or quality strings. In this representation, `seq` contains
+#'   BAM-packed nucleotide bytes and `qual` contains raw Phred bytes. Compact
+#'   output is intended for users who want to defer or avoid full
+#'   string-materialization costs; use `decode_compact_seq()`,
+#'   `decode_compact_qual()`, or `decode_seqqual_compact()` to decode compact
+#'   output back to standard string form when needed.
 #' - `"GAlignments"` and `"GAlignmentPairs"` output exclude unmapped records.
 #' - `as = "scanBam"` returns a strict scan-like list-of-lists:
 #'   without `param$which`, it returns one unnamed batch; with `param$which`,
@@ -335,6 +346,91 @@ bam_count <- function(
         BPPARAM = BPPARAM,
         bp_workers = parallel_plan$bp_workers
     )
+}
+
+#' Decode compact BamScale sequence output
+#'
+#' Decodes `seq` values returned by `bam_read(..., seqqual_mode = "compact")`
+#' back to ordinary character strings.
+#'
+#' @param seq A list (or list-column) of `raw` vectors produced by compact
+#'   BamScale sequence extraction.
+#' @param qwidth Integer vector of read widths. This is required because compact
+#'   sequence bytes use BAM's 4-bit packed encoding (two bases per byte).
+#'
+#' @return A character vector containing decoded sequence strings.
+#' @export
+decode_compact_seq <- function(seq, qwidth) {
+    if (!is.list(seq)) {
+        stop("`seq` must be a list of raw vectors from compact BamScale output", call. = FALSE)
+    }
+    qwidth <- as.integer(qwidth)
+    if (length(seq) != length(qwidth)) {
+        stop("`seq` and `qwidth` must have the same length", call. = FALSE)
+    }
+    decode_compact_seq_cpp(seq, qwidth)
+}
+
+#' Decode compact BamScale quality output
+#'
+#' Decodes `qual` values returned by `bam_read(..., seqqual_mode = "compact")`
+#' back to ASCII Phred-quality strings.
+#'
+#' @param qual A list (or list-column) of `raw` vectors produced by compact
+#'   BamScale quality extraction.
+#'
+#' @return A character vector containing decoded quality strings. Entries with
+#'   all-missing quality bytes are returned as `"*"`, matching BamScale's
+#'   compatibility mode.
+#' @export
+decode_compact_qual <- function(qual) {
+    if (!is.list(qual)) {
+        stop("`qual` must be a list of raw vectors from compact BamScale output", call. = FALSE)
+    }
+    decode_compact_qual_cpp(qual)
+}
+
+#' Decode compact `seq` and `qual` columns in BamScale output
+#'
+#' Convenience wrapper for converting a compact `bam_read()` result back to
+#' ordinary sequence and quality strings.
+#'
+#' @param x A `data.frame`, `S4Vectors::DataFrame`, or list-like object
+#'   containing compact BamScale `seq` and/or `qual` columns.
+#' @param seq_col Name of the compact sequence column.
+#' @param qual_col Name of the compact quality column.
+#' @param qwidth_col Name of the read-width column used to decode compact
+#'   sequence bytes.
+#'
+#' @return `x` with compact `seq` and/or `qual` columns replaced by decoded
+#'   character vectors. The input class is preserved.
+#' @export
+decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth_col = "qwidth") {
+    if (is.null(names(x))) {
+        stop("`x` must be a named data.frame, DataFrame, or list-like object", call. = FALSE)
+    }
+
+    has_seq <- seq_col %in% names(x)
+    has_qual <- qual_col %in% names(x)
+
+    if (!has_seq && !has_qual) {
+        stop("`x` must contain at least one of `seq_col` or `qual_col`", call. = FALSE)
+    }
+
+    out <- x
+
+    if (has_seq) {
+        if (!(qwidth_col %in% names(x))) {
+            stop("Compact `seq` decoding requires a `qwidth` column", call. = FALSE)
+        }
+        out[[seq_col]] <- decode_compact_seq(x[[seq_col]], x[[qwidth_col]])
+    }
+
+    if (has_qual) {
+        out[[qual_col]] <- decode_compact_qual(x[[qual_col]])
+    }
+
+    out
 }
 
 
