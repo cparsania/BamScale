@@ -11,7 +11,7 @@ bam_count(
   file,
   param = NULL,
   threads = 1L,
-  BPPARAM = NULL,
+  BPPARAM = BiocParallel::bpparam(),
   auto_threads = FALSE,
   include_unmapped = TRUE
 )
@@ -36,7 +36,9 @@ bam_count(
 
 - BPPARAM:
 
-  Optional `BiocParallel` parameter for multi-file operation.
+  `BiocParallel` parameter for multi-file operation. Defaults to
+  [`BiocParallel::bpparam()`](https://rdrr.io/pkg/BiocParallel/man/register.html).
+  Set to `NULL` to force serial file processing.
 
 - auto_threads:
 
@@ -68,10 +70,8 @@ single file would still oversubscribe the machine.
 ## Examples
 
 ``` r
-if (requireNamespace("ompBAM", quietly = TRUE)) {
-  bam <- ompBAM::example_BAM("Unsorted")
-  bam_count(bam, threads = 2)
-}
+bam <- ompBAM::example_BAM("Unsorted")
+bam_count(bam, threads = 2)
 #>    seqname seqlength count
 #> 1        1 248956422  1308
 #> 2       10 133797422   308

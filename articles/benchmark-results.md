@@ -1,6 +1,6 @@
 # Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads
 
-## 1 Overview
+## Overview
 
 This article combines the final benchmark runs used for the current
 BamScale benchmark summary:
@@ -14,9 +14,9 @@ the same worker/thread budget policy. `Seqqual` is reported separately
 because it includes both the fair compatibility track and the optimized
 compact track.
 
-## 2 Data Loading
+## Data Loading
 
-## 3 Benchmark Provenance
+## Benchmark Provenance
 
 - Step1 and GAlignments run: run_20260320_133141
 - SeqQual run: run_20260320_162359
@@ -30,7 +30,7 @@ compact track.
 | run_20260320_133141 | step1, galignments | balanced | Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz |            96 |    723.6 |               32 |
 | run_20260320_162359 | seqqual            | balanced | Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz |            96 |    723.6 |               26 |
 
-## 4 Methods Rationale
+## Methods Rationale
 
 This benchmark suite covers three distinct access patterns:
 
@@ -55,7 +55,7 @@ Across all runs, the benchmark design emphasizes:
 - single-file and multi-file reporting
 - fixed 48-thread budget for multi-file plans
 
-## 5 Input Files
+## Input Files
 
 The same underlying four selected BAMs were used for both runs, with
 repeated files allowed to populate the 12-file multi-file benchmark set.
@@ -67,7 +67,7 @@ repeated files allowed to populate the 12-file multi-file benchmark set.
 | /home/chiragp/.cache/R/ExperimentHub/134ab721bfa655_2071 | chipseqDBData | FALSE               | TRUE               |   305.2 | TRUE      |
 | /home/chiragp/.cache/R/ExperimentHub/134ab7231ef47d_2074 | chipseqDBData | FALSE               | TRUE               |   227.3 | TRUE      |
 
-## 6 Reference Counts
+## Reference Counts
 
 | run                 | scenario | workload    | n_files | n_records | total_mb |
 |:--------------------|:---------|:------------|--------:|----------:|---------:|
@@ -78,7 +78,7 @@ repeated files allowed to populate the 12-file multi-file benchmark set.
 | run_20260320_162359 | multi    | seqqual     |      12 | 132482148 |   4203.4 |
 | run_20260320_162359 | single   | seqqual     |       1 |  16675372 |    548.3 |
 
-## 7 Best-Observed Summary
+## Best-Observed Summary
 
 | Scenario | Workload    | Track     | Method family     | Method                                            | Plan | Median time (s) |
 |:---------|:------------|:----------|:------------------|:--------------------------------------------------|:-----|----------------:|
@@ -97,76 +97,159 @@ repeated files allowed to populate the 12-file multi-file benchmark set.
 | single   | step1       | fair      | BamScale          | BamScale                                          | 1x48 |           8.035 |
 | single   | step1       | fair      | Rsamtools         | Rsamtools::scanBam                                | 1x1  |          15.403 |
 
-## 8 BamScale-versus-Comparator Fold Change
+## BamScale-versus-Comparator Fold Change
 
-| Scenario | Workload    | Track     | BamScale method                   | BamScale plan | BamScale (s) | Comparator method                                 | Comparator plan | Comparator (s) | Comparator / BamScale | BamScale faster (%) |
-|:---------|:------------|:----------|:----------------------------------|:--------------|-------------:|:--------------------------------------------------|:----------------|---------------:|----------------------:|--------------------:|
-| single   | galignments | fair      | BamScale                          | 1x48          |        4.047 | GenomicAlignments::readGAlignments                | 1x1             |         10.568 |                 2.611 |                61.7 |
-| single   | seqqual     | fair      | BamScale                          | 1x48          |       26.295 | Rsamtools::scanBam                                | 1x1             |         24.327 |                 0.925 |                -8.1 |
-| single   | seqqual     | optimized | BamScale (compact seqqual)        | 1x48          |       15.026 | Rsamtools::scanBam                                | 1x1             |         24.327 |                 1.619 |                38.2 |
-| single   | step1       | fair      | BamScale                          | 1x48          |        8.035 | Rsamtools::scanBam                                | 1x1             |         15.403 |                 1.917 |                47.8 |
-| multi    | galignments | fair      | BamScale (balanced budget)        | 1x48          |       61.204 | GenomicAlignments::readGAlignments + BiocParallel | 12x1            |         90.777 |                 1.483 |                32.6 |
-| multi    | seqqual     | fair      | BamScale (balanced budget)        | 1x48          |      181.277 | Rsamtools::scanBam + BiocParallel                 | 12x1            |        134.667 |                 0.743 |               -34.6 |
-| multi    | seqqual     | optimized | BamScale (compact seqqual budget) | 12x4          |      175.451 | Rsamtools::scanBam + BiocParallel                 | 12x1            |        134.667 |                 0.768 |               -30.3 |
-| multi    | step1       | fair      | BamScale (balanced budget)        | 1x48          |       68.469 | Rsamtools::scanBam + BiocParallel                 | 12x1            |        107.882 |                 1.576 |                36.5 |
+| Scenario | Workload    | Track     | Comparator family | Comparator method                                 | Comparator plan | Comparator time (s) | BamScale method                   | BamScale plan | BamScale time (s) | Comparator/BamScale | BamScale % faster |
+|:---------|:------------|:----------|:------------------|:--------------------------------------------------|:----------------|--------------------:|:----------------------------------|:--------------|------------------:|--------------------:|------------------:|
+| single   | galignments | fair      | GenomicAlignments | GenomicAlignments::readGAlignments                | 1x1             |              10.568 | BamScale                          | 1x48          |             4.047 |               2.611 |            61.705 |
+| single   | step1       | fair      | Rsamtools         | Rsamtools::scanBam                                | 1x1             |              15.403 | BamScale                          | 1x48          |             8.035 |               1.917 |            47.835 |
+| multi    | galignments | fair      | GenomicAlignments | GenomicAlignments::readGAlignments + BiocParallel | 12x1            |              90.777 | BamScale (balanced budget)        | 1x48          |            61.204 |               1.483 |            32.578 |
+| multi    | step1       | fair      | Rsamtools         | Rsamtools::scanBam + BiocParallel                 | 12x1            |             107.882 | BamScale (balanced budget)        | 1x48          |            68.469 |               1.576 |            36.534 |
+| single   | seqqual     | fair      | Rsamtools         | Rsamtools::scanBam                                | 1x1             |              24.327 | BamScale                          | 1x48          |            26.295 |               0.925 |            -8.088 |
+| single   | seqqual     | optimized | Rsamtools         | Rsamtools::scanBam                                | 1x1             |              24.327 | BamScale (compact seqqual)        | 1x48          |            15.026 |               1.619 |            38.232 |
+| multi    | seqqual     | fair      | Rsamtools         | Rsamtools::scanBam + BiocParallel                 | 12x1            |             134.667 | BamScale (balanced budget)        | 1x48          |           181.277 |               0.743 |           -34.611 |
+| multi    | seqqual     | optimized | Rsamtools         | Rsamtools::scanBam + BiocParallel                 | 12x1            |             134.667 | BamScale (compact seqqual budget) | 12x4          |           175.451 |               0.768 |           -30.285 |
 
-![](benchmark-results_files/figure-html/unnamed-chunk-7-1.png)
+![](benchmark-results_files/figure-html/fold-change-plot-1.png)
 
-## 9 Step1 and GAlignments: Single-File Scaling
+## Single-File `step1`
 
-![](benchmark-results_files/figure-html/unnamed-chunk-8-1.png)
+![](benchmark-results_files/figure-html/step1-single-plot-1.png)
 
-![](benchmark-results_files/figure-html/unnamed-chunk-9-1.png)
+| Method family | Method             | Plan | Median time (s) |
+|:--------------|:-------------------|:-----|----------------:|
+| BamScale      | BamScale           | 1x48 |          8.0350 |
+| BamScale      | BamScale           | 1x24 |          8.9795 |
+| BamScale      | BamScale           | 1x12 |          9.3775 |
+| BamScale      | BamScale           | 1x4  |         11.0565 |
+| Rsamtools     | Rsamtools::scanBam | 1x1  |         15.4030 |
+| BamScale      | BamScale           | 1x1  |         16.3500 |
 
-## 10 Step1: Multi-File Scaling
+## Single-File `galignments`
 
-![](benchmark-results_files/figure-html/unnamed-chunk-10-1.png)
+![](benchmark-results_files/figure-html/galignments-single-plot-1.png)
 
-## 11 GAlignments: Multi-File Scaling
+| Method family     | Method                             | Plan | Median time (s) |
+|:------------------|:-----------------------------------|:-----|----------------:|
+| BamScale          | BamScale                           | 1x48 |          4.0470 |
+| BamScale          | BamScale                           | 1x24 |          4.1920 |
+| BamScale          | BamScale                           | 1x12 |          4.7585 |
+| BamScale          | BamScale                           | 1x4  |          6.6230 |
+| GenomicAlignments | GenomicAlignments::readGAlignments | 1x1  |         10.5680 |
+| BamScale          | BamScale                           | 1x1  |         11.0405 |
 
-![](benchmark-results_files/figure-html/unnamed-chunk-11-1.png)
+## Multi-File `step1`
 
-## 12 BamScale Worker-Thread Tradeoff
+![](benchmark-results_files/figure-html/step1-multi-plot-1.png)
 
-![](benchmark-results_files/figure-html/unnamed-chunk-12-1.png)
+## Multi-File `galignments`
 
-## 13 SeqQual: Single-File Fair and Compact Tracks
+![](benchmark-results_files/figure-html/galignments-multi-plot-1.png)
 
-![](benchmark-results_files/figure-html/unnamed-chunk-13-1.png)
+## Single-File `seqqual`
 
-## 14 SeqQual: Multi-File Fair and Compact Tracks
+![](benchmark-results_files/figure-html/seqqual-single-plot-1.png)
 
-![](benchmark-results_files/figure-html/unnamed-chunk-14-1.png)
+| Method                | Plan | Median time (s) |
+|:----------------------|:-----|----------------:|
+| BamScale (compact)    | 1x48 |         15.0265 |
+| BamScale (compact)    | 1x24 |         16.4440 |
+| BamScale (compact)    | 1x12 |         17.0985 |
+| BamScale (compact)    | 1x4  |         19.8780 |
+| Rsamtools::scanBam    | 1x1  |         24.3275 |
+| BamScale (compact)    | 1x1  |         25.5300 |
+| BamScale (compatible) | 1x48 |         26.2950 |
+| BamScale (compatible) | 1x12 |         27.6200 |
+| BamScale (compatible) | 1x24 |         28.3390 |
+| BamScale (compatible) | 1x4  |         31.6780 |
+| BamScale (compatible) | 1x1  |         35.6830 |
 
-## 15 SeqQual Compact Gain
+## Multi-File `seqqual`
 
-| Scenario | Plan | Compatible (s) | Compact (s) | Compatible / compact |
-|:---------|:-----|---------------:|------------:|---------------------:|
-| single   | 1x1  |         35.683 |      25.530 |                1.398 |
-| single   | 1x12 |         27.620 |      17.098 |                1.615 |
-| single   | 1x24 |         28.339 |      16.444 |                1.723 |
-| single   | 1x4  |         31.678 |      19.878 |                1.594 |
-| single   | 1x48 |         26.295 |      15.026 |                1.750 |
-| multi    | 12x4 |        270.889 |     175.451 |                1.544 |
-| multi    | 1x48 |        181.277 |     186.321 |                0.973 |
-| multi    | 2x24 |        573.752 |     337.596 |                1.700 |
-| multi    | 4x12 |        404.183 |     241.524 |                1.673 |
-| multi    | 8x6  |        361.750 |     210.290 |                1.720 |
+![](benchmark-results_files/figure-html/seqqual-multi-plot-1.png)
 
-## 16 Benchmark Interpretation
+## Compact-versus-Compatible `seqqual`
 
-This combined benchmark supports the following conclusions:
+| Scenario | Workload | Plan | Compatible time (s) | Compact time (s) | Compatible/Compact |
+|:---------|:---------|:-----|--------------------:|-----------------:|-------------------:|
+| multi    | seqqual  | 1x48 |             181.277 |          186.321 |              0.973 |
+| multi    | seqqual  | 2x24 |             573.752 |          337.596 |              1.700 |
+| multi    | seqqual  | 4x12 |             404.183 |          241.524 |              1.673 |
+| multi    | seqqual  | 8x6  |             361.750 |          210.290 |              1.720 |
+| multi    | seqqual  | 12x4 |             270.889 |          175.451 |              1.544 |
+| single   | seqqual  | 1x1  |              35.683 |           25.530 |              1.398 |
+| single   | seqqual  | 1x4  |              31.678 |           19.878 |              1.594 |
+| single   | seqqual  | 1x12 |              27.620 |           17.098 |              1.615 |
+| single   | seqqual  | 1x24 |              28.339 |           16.444 |              1.723 |
+| single   | seqqual  | 1x48 |              26.295 |           15.026 |              1.750 |
 
-1.  BamScale showed clear single-file and best-case multi-file
-    advantages for both `step1` and `galignments`, with the strongest
-    multi-file points occurring in the low-worker, high-thread regime.
-2.  For `seqqual`, BamScale’s fair compatibility track remained slower
-    than the Rsamtools comparator, but the optimized compact track
-    substantially reduced that gap and produced a clear single-file win.
-3.  In multi-file `seqqual`, the compact track improved on the fair
-    compatibility path but did not surpass the best Rsamtools multi-file
-    baseline in this run.
-4.  Overall, `step1` and `galignments` are the clearest BamScale
-    strengths, while `seqqual` compact mode represents a substantial
-    optimization that improves, but does not fully close, the multi-file
-    gap to the comparator.
+![](benchmark-results_files/figure-html/compact-gain-plot-1.png)
+
+## Interpretation
+
+The benchmark shows a consistent pattern across the final runs:
+
+- `step1` and `galignments` are the strongest BamScale workloads.
+- For these workloads, the best BamScale plans are usually low-worker,
+  high-thread configurations, indicating that within-file multithreading
+  contributes more than aggressively increasing the number of file
+  workers.
+- `Seqqual` is more difficult because sequence and quality extraction
+  amplifies output-construction overhead.
+- BamScale compact mode narrows this gap substantially and produces the
+  strongest single-file `seqqual` result, but the best multi-file
+  `seqqual` comparator remains faster.
+
+In practical terms, these results support the following guidance:
+
+- use BamScale when metadata extraction or alignment-object construction
+  is a bottleneck in BAM-heavy Bioconductor workflows
+- favor low-worker, high-thread plans when traversing one or a small
+  number of large BAM files
+- interpret compact `seqqual` as an optimized throughput path rather
+  than as a strict compatibility benchmark
+
+## Session Information
+
+    ## R version 4.5.3 (2026-03-11)
+    ## Platform: x86_64-pc-linux-gnu
+    ## Running under: Ubuntu 24.04.4 LTS
+    ## 
+    ## Matrix products: default
+    ## BLAS:   /usr/lib/x86_64-linux-gnu/openblas-pthread/libblas.so.3 
+    ## LAPACK: /usr/lib/x86_64-linux-gnu/openblas-pthread/libopenblasp-r0.3.26.so;  LAPACK version 3.12.0
+    ## 
+    ## locale:
+    ##  [1] LC_CTYPE=C.UTF-8       LC_NUMERIC=C           LC_TIME=C.UTF-8       
+    ##  [4] LC_COLLATE=C.UTF-8     LC_MONETARY=C.UTF-8    LC_MESSAGES=C.UTF-8   
+    ##  [7] LC_PAPER=C.UTF-8       LC_NAME=C              LC_ADDRESS=C          
+    ## [10] LC_TELEPHONE=C         LC_MEASUREMENT=C.UTF-8 LC_IDENTIFICATION=C   
+    ## 
+    ## time zone: UTC
+    ## tzcode source: system (glibc)
+    ## 
+    ## attached base packages:
+    ## [1] stats     graphics  grDevices utils     datasets  methods   base     
+    ## 
+    ## other attached packages:
+    ## [1] scales_1.4.0     ggplot2_4.0.2    tidyr_1.3.2      dplyr_1.2.1     
+    ## [5] readr_2.2.0      BiocStyle_2.38.0
+    ## 
+    ## loaded via a namespace (and not attached):
+    ##  [1] bit_4.6.0           gtable_0.3.6        jsonlite_2.0.0     
+    ##  [4] crayon_1.5.3        compiler_4.5.3      BiocManager_1.30.27
+    ##  [7] tidyselect_1.2.1    parallel_4.5.3      jquerylib_0.1.4    
+    ## [10] systemfonts_1.3.2   textshaping_1.0.5   yaml_2.3.12        
+    ## [13] fastmap_1.2.0       R6_2.6.1            labeling_0.4.3     
+    ## [16] generics_0.1.4      knitr_1.51          tibble_3.3.1       
+    ## [19] bookdown_0.46       desc_1.4.3          RColorBrewer_1.1-3 
+    ## [22] bslib_0.10.0        pillar_1.11.1       tzdb_0.5.0         
+    ## [25] rlang_1.2.0         cachem_1.1.0        xfun_0.57          
+    ## [28] S7_0.2.1-1          fs_2.1.0            sass_0.4.10        
+    ## [31] bit64_4.6.0-1       cli_3.6.6           withr_3.0.2        
+    ## [34] pkgdown_2.2.0       magrittr_2.0.5      digest_0.6.39      
+    ## [37] grid_4.5.3          vroom_1.7.1         hms_1.1.4          
+    ## [40] lifecycle_1.0.5     vctrs_0.7.3         evaluate_1.0.5     
+    ## [43] glue_1.8.1          farver_2.1.2        ragg_1.5.2         
+    ## [46] rmarkdown_2.31      purrr_1.2.2         tools_4.5.3        
+    ## [49] pkgconfig_2.0.3     htmltools_0.5.9

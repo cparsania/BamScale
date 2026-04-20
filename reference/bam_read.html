@@ -13,7 +13,7 @@ GenomicAlignments::readGAlignmentPairs()."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.7</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -26,6 +26,7 @@ GenomicAlignments::readGAlignmentPairs()."></head><body>
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Articles</h6></li>
+    <li><a class="dropdown-item" href="../articles/BamScale-intro.html">Getting started with BamScale</a></li>
     <li><a class="dropdown-item" href="../articles/benchmark-results.html">Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads</a></li>
   </ul></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -61,7 +62,7 @@ GenomicAlignments::readGAlignmentPairs()."></head><body>
 <span>  as <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"DataFrame"</span>, <span class="st">"data.frame"</span>, <span class="st">"GAlignments"</span>, <span class="st">"GAlignmentPairs"</span>, <span class="st">"scanBam"</span><span class="op">)</span>,</span>
 <span>  seqqual_mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"compatible"</span>, <span class="st">"compact"</span><span class="op">)</span>,</span>
 <span>  threads <span class="op">=</span> <span class="fl">1L</span>,</span>
-<span>  BPPARAM <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  BPPARAM <span class="op">=</span> <span class="fu">BiocParallel</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/BiocParallel/man/register.html" class="external-link">bpparam</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  auto_threads <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  use.names <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  with.which_label <span class="op">=</span> <span class="cn">FALSE</span>,</span>
@@ -110,8 +111,13 @@ lightweight use). The following fields are honored:
 <dd><p>Controls representation of <code>seq</code>/<code>qual</code> when those
 fields are requested:</p><ul><li><p><code>"compatible"</code> (default): return character vectors matching
 <code>scanBam</code>-style expectations,</p></li>
-<li><p><code>"compact"</code>: return raw list-columns for faster/lower-overhead
-extraction. This mode is currently supported for
+<li><p><code>"compact"</code>: return lower-level raw list-columns for faster/lower-overhead
+extraction. In compact mode, <code>seq</code> is returned as one <code>raw</code> vector per read
+containing BAM-native packed sequence bytes (two bases per byte), and
+<code>qual</code> is returned as one <code>raw</code> vector per read containing per-base Phred
+bytes. These are not plain character strings. <code>qwidth</code> is needed to decode
+compact <code>seq</code> back to base letters, and <code>qual</code> values of <code>255</code> correspond to
+missing quality values. This mode is currently supported for
 <code>as = "data.frame"</code> or <code>as = "DataFrame"</code>.</p></li>
 </ul></dd>
 
@@ -122,8 +128,9 @@ reading/decompression. May be capped when <code>auto_threads = TRUE</code>.</p><
 
 
 <dt id="arg-bpparam">BPPARAM<a class="anchor" aria-label="anchor" href="#arg-bpparam"></a></dt>
-<dd><p>Optional <code>BiocParallel</code> parameter used when <code>file</code> contains
-more than one BAM. If <code>NULL</code>, files are processed serially.</p></dd>
+<dd><p><code>BiocParallel</code> parameter used when <code>file</code> contains
+more than one BAM. Defaults to <code><a href="https://rdrr.io/pkg/BiocParallel/man/register.html" class="external-link">BiocParallel::bpparam()</a></code>. Set to <code>NULL</code>
+to force serial file processing.</p></dd>
 
 
 <dt id="arg-auto-threads">auto_threads<a class="anchor" aria-label="anchor" href="#arg-auto-threads"></a></dt>
@@ -175,30 +182,35 @@ requirements into required-set and required-unset bit masks.</p></li>
 <li><p>Tag values are returned as character columns. Scalar tags are scalar
 strings; <code>B</code> tags are comma-separated vectors.</p></li>
 <li><p><code>seqqual_mode = "compact"</code> is optimized for throughput-oriented
-benchmarking and returns raw list-columns for <code>seq</code>/<code>qual</code>.</p></li>
+benchmarking and returns raw list-columns for <code>seq</code>/<code>qual</code>, not ordinary
+sequence or quality strings. In this representation, <code>seq</code> contains
+BAM-packed nucleotide bytes and <code>qual</code> contains raw Phred bytes. Compact
+output is intended for users who want to defer or avoid full
+string-materialization costs; use <code><a href="decode_compact_seq.html">decode_compact_seq()</a></code>,
+<code><a href="decode_compact_qual.html">decode_compact_qual()</a></code>, or <code><a href="decode_seqqual_compact.html">decode_seqqual_compact()</a></code> to decode compact
+output back to standard string form when needed.</p></li>
 <li><p><code>"GAlignments"</code> and <code>"GAlignmentPairs"</code> output exclude unmapped records.</p></li>
 <li><p><code>as = "scanBam"</code> returns a strict scan-like list-of-lists:
 without <code>param$which</code>, it returns one unnamed batch; with <code>param$which</code>,
 it returns one batch per range label (including empty ranges), with
 requested <code>what</code> fields and <code>tag</code> values under <code>$tag</code>.
-If Biostrings is installed, <code>seq</code> and <code>qual</code> are returned as
-<code>DNAStringSet</code> and <code>PhredQuality</code> for closer <code>scanBam()</code> compatibility.</p></li>
+In this output mode, <code>seq</code> and <code>qual</code> are returned as
+<code><a href="https://rdrr.io/pkg/Biostrings/man/XStringSet-class.html" class="external-link">Biostrings::DNAStringSet</a></code> and <code><a href="https://rdrr.io/pkg/Biostrings/man/XStringQuality-class.html" class="external-link">Biostrings::PhredQuality</a></code> for closer
+<code>scanBam()</code> compatibility.</p></li>
 </ul></div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"ompBAM"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>  <span class="va">bam</span> <span class="op">&lt;-</span> <span class="fu">ompBAM</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/ompBAM/man/example_BAM.html" class="external-link">example_BAM</a></span><span class="op">(</span><span class="st">"Unsorted"</span><span class="op">)</span></span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="va">bam</span> <span class="op">&lt;-</span> <span class="fu">ompBAM</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/ompBAM/man/example_BAM.html" class="external-link">example_BAM</a></span><span class="op">(</span><span class="st">"Unsorted"</span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
-<span class="r-in"><span>  <span class="co"># Familiar scanBam-like field selection</span></span></span>
-<span class="r-in"><span>  <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu">bam_read</span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"flag"</span>, <span class="st">"rname"</span>, <span class="st">"pos"</span>, <span class="st">"cigar"</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># Familiar scanBam-like field selection</span></span></span>
+<span class="r-in"><span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu">bam_read</span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"flag"</span>, <span class="st">"rname"</span>, <span class="st">"pos"</span>, <span class="st">"cigar"</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
-<span class="r-in"><span>  <span class="co"># Include sequence + quality</span></span></span>
-<span class="r-in"><span>  <span class="va">y</span> <span class="op">&lt;-</span> <span class="fu">bam_read</span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"seq"</span>, <span class="st">"qual"</span><span class="op">)</span>, threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># Include sequence + quality</span></span></span>
+<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu">bam_read</span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"seq"</span>, <span class="st">"qual"</span><span class="op">)</span>, threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
-<span class="r-in"><span>  <span class="co"># scanBam-shaped output</span></span></span>
-<span class="r-in"><span>  <span class="va">z</span> <span class="op">&lt;-</span> <span class="fu">bam_read</span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"flag"</span><span class="op">)</span>, tag <span class="op">=</span> <span class="st">"NM"</span>, as <span class="op">=</span> <span class="st">"scanBam"</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">}</span></span></span>
+<span class="r-in"><span><span class="co"># scanBam-shaped output</span></span></span>
+<span class="r-in"><span><span class="va">z</span> <span class="op">&lt;-</span> <span class="fu">bam_read</span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"flag"</span><span class="op">)</span>, tag <span class="op">=</span> <span class="st">"NM"</span>, as <span class="op">=</span> <span class="st">"scanBam"</span><span class="op">)</span></span></span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

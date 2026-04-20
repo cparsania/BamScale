@@ -18,7 +18,7 @@ bam_read(
   as = c("DataFrame", "data.frame", "GAlignments", "GAlignmentPairs", "scanBam"),
   seqqual_mode = c("compatible", "compact"),
   threads = 1L,
-  BPPARAM = NULL,
+  BPPARAM = BiocParallel::bpparam(),
   auto_threads = FALSE,
   use.names = FALSE,
   with.which_label = FALSE,
@@ -83,9 +83,15 @@ bam_read(
   - `"compatible"` (default): return character vectors matching
     `scanBam`-style expectations,
 
-  - `"compact"`: return raw list-columns for faster/lower-overhead
-    extraction. This mode is currently supported for `as = "data.frame"`
-    or `as = "DataFrame"`.
+  - `"compact"`: return lower-level raw list-columns for
+    faster/lower-overhead extraction. In compact mode, `seq` is returned
+    as one `raw` vector per read containing BAM-native packed sequence
+    bytes (two bases per byte), and `qual` is returned as one `raw`
+    vector per read containing per-base Phred bytes. These are not plain
+    character strings. `qwidth` is needed to decode compact `seq` back
+    to base letters, and `qual` values of `255` correspond to missing
+    quality values. This mode is currently supported for
+    `as = "data.frame"` or `as = "DataFrame"`.
 
 - threads:
 
@@ -94,8 +100,10 @@ bam_read(
 
 - BPPARAM:
 
-  Optional `BiocParallel` parameter used when `file` contains more than
-  one BAM. If `NULL`, files are processed serially.
+  `BiocParallel` parameter used when `file` contains more than one BAM.
+  Defaults to
+  [`BiocParallel::bpparam()`](https://rdrr.io/pkg/BiocParallel/man/register.html).
+  Set to `NULL` to force serial file processing.
 
 - auto_threads:
 
@@ -159,7 +167,16 @@ Compatibility notes:
   strings; `B` tags are comma-separated vectors.
 
 - `seqqual_mode = "compact"` is optimized for throughput-oriented
-  benchmarking and returns raw list-columns for `seq`/`qual`.
+  benchmarking and returns raw list-columns for `seq`/`qual`, not
+  ordinary sequence or quality strings. In this representation, `seq`
+  contains BAM-packed nucleotide bytes and `qual` contains raw Phred
+  bytes. Compact output is intended for users who want to defer or avoid
+  full string-materialization costs; use
+  [`decode_compact_seq()`](https://cparsania.github.io/BamScale/reference/decode_compact_seq.md),
+  [`decode_compact_qual()`](https://cparsania.github.io/BamScale/reference/decode_compact_qual.md),
+  or
+  [`decode_seqqual_compact()`](https://cparsania.github.io/BamScale/reference/decode_seqqual_compact.md)
+  to decode compact output back to standard string form when needed.
 
 - `"GAlignments"` and `"GAlignmentPairs"` output exclude unmapped
   records.
@@ -167,23 +184,24 @@ Compatibility notes:
 - `as = "scanBam"` returns a strict scan-like list-of-lists: without
   `param$which`, it returns one unnamed batch; with `param$which`, it
   returns one batch per range label (including empty ranges), with
-  requested `what` fields and `tag` values under `$tag`. If Biostrings
-  is installed, `seq` and `qual` are returned as `DNAStringSet` and
-  `PhredQuality` for closer `scanBam()` compatibility.
+  requested `what` fields and `tag` values under `$tag`. In this output
+  mode, `seq` and `qual` are returned as
+  [`Biostrings::DNAStringSet`](https://rdrr.io/pkg/Biostrings/man/XStringSet-class.html)
+  and
+  [`Biostrings::PhredQuality`](https://rdrr.io/pkg/Biostrings/man/XStringQuality-class.html)
+  for closer `scanBam()` compatibility.
 
 ## Examples
 
 ``` r
-if (requireNamespace("ompBAM", quietly = TRUE)) {
-  bam <- ompBAM::example_BAM("Unsorted")
+bam <- ompBAM::example_BAM("Unsorted")
 
-  # Familiar scanBam-like field selection
-  x <- bam_read(bam, what = c("qname", "flag", "rname", "pos", "cigar"))
+# Familiar scanBam-like field selection
+x <- bam_read(bam, what = c("qname", "flag", "rname", "pos", "cigar"))
 
-  # Include sequence + quality
-  y <- bam_read(bam, what = c("qname", "seq", "qual"), threads = 2)
+# Include sequence + quality
+y <- bam_read(bam, what = c("qname", "seq", "qual"), threads = 2)
 
-  # scanBam-shaped output
-  z <- bam_read(bam, what = c("qname", "flag"), tag = "NM", as = "scanBam")
-}
+# scanBam-shaped output
+z <- bam_read(bam, what = c("qname", "flag"), tag = "NM", as = "scanBam")
 ```

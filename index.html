@@ -22,7 +22,7 @@
 
     <a class="navbar-brand me-2" href="index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.7</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -37,6 +37,7 @@
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Articles</h6></li>
+    <li><a class="dropdown-item" href="articles/BamScale-intro.html">Getting started with BamScale</a></li>
     <li><a class="dropdown-item" href="articles/benchmark-results.html">Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads</a></li>
   </ul>
 </li>
@@ -181,8 +182,35 @@
 <span>  threads <span class="op">=</span> <span class="fl">4</span></span>
 <span><span class="op">)</span></span>
 <span></span>
+<span><span class="co"># 2b) Seq/qual in compact mode (returns raw vectors, not plain strings)</span></span>
+<span><span class="va">sq_compact</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_read.html">bam_read</a></span><span class="op">(</span></span>
+<span>  file <span class="op">=</span> <span class="va">bam</span>,</span>
+<span>  what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"qwidth"</span>, <span class="st">"seq"</span>, <span class="st">"qual"</span><span class="op">)</span>,</span>
+<span>  as <span class="op">=</span> <span class="st">"data.frame"</span>,</span>
+<span>  seqqual_mode <span class="op">=</span> <span class="st">"compact"</span>,</span>
+<span>  threads <span class="op">=</span> <span class="fl">4</span></span>
+<span><span class="op">)</span></span>
+<span></span>
 <span><span class="co"># 3) Fast chromosome-level counts</span></span>
 <span><span class="va">cnt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_count.html">bam_count</a></span><span class="op">(</span>file <span class="op">=</span> <span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span></code></pre></div>
+<div class="section level3">
+<h3 id="interpreting-seqqual_mode--compact">Interpreting <code>seqqual_mode = "compact"</code>
+<a class="anchor" aria-label="anchor" href="#interpreting-seqqual_mode--compact"></a>
+</h3>
+<p>Compact mode is an optimized BamScale-specific representation for <code>seq</code> and <code>qual</code>. It does not return ordinary character strings:</p>
+<ul>
+<li>
+<code>seq</code> is returned as a list-column of <code>raw</code> vectors containing BAM-native packed sequence bytes (two bases per byte)</li>
+<li>
+<code>qual</code> is returned as a list-column of <code>raw</code> vectors containing per-base numeric Phred bytes</li>
+<li>
+<code>qwidth</code> is required to decode compact <code>seq</code> back to base letters correctly</li>
+<li>a quality byte value of <code>255</code> represents missing quality</li>
+</ul>
+<p>Compact mode is therefore best interpreted as a lower-level, deferred-decoding representation. It is useful when extraction throughput matters more than immediate string materialization. If downstream code expects ordinary sequence or quality strings, use <code>seqqual_mode = "compatible"</code> instead, or decode compact output explicitly:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">sq_compact_decoded</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/decode_seqqual_compact.html">decode_seqqual_compact</a></span><span class="op">(</span><span class="va">sq_compact</span><span class="op">)</span></span></code></pre></div>
+</div>
 </div>
 <div class="section level2">
 <h2 id="parallelism-model">Parallelism Model<a class="anchor" aria-label="anchor" href="#parallelism-model"></a>
@@ -208,7 +236,7 @@
 </li>
 <li>source:
 <ul>
-<li><code>vignettes/benchmark-results.qmd</code></li>
+<li><code>vignettes/benchmark-results.Rmd</code></li>
 </ul>
 </li>
 </ul>
@@ -268,7 +296,7 @@
 <div class="section level2">
 <h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
 </h2>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/citation.html" class="external-link">citation</a></span><span class="op">(</span><span class="st">"BamScale"</span><span class="op">)</span></span></code></pre></div>
 <p>If BamScale contributes to performance claims, please also cite <code>ompBAM</code>.</p>
 </div>
@@ -282,9 +310,9 @@
 <li>benchmark evidence for performance claims.</li>
 </ul>
 <p>Before opening a PR, run:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="ex">R</span> CMD build .</span>
-<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="ex">R</span> CMD check <span class="at">--as-cran</span> BamScale_<span class="pp">*</span>.tar.gz</span>
-<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">"BiocCheck::BiocCheck('.')"</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="ex">R</span> CMD build .</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="ex">R</span> CMD check <span class="at">--as-cran</span> BamScale_<span class="pp">*</span>.tar.gz</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">"BiocCheck::BiocCheck('.')"</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="license">License<a class="anchor" aria-label="anchor" href="#license"></a>

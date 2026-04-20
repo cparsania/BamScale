@@ -10,9 +10,7 @@
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><script src="benchmark-results_files/libs/quarto-html/popper.min.js"></script><script src="benchmark-results_files/libs/quarto-html/tippy.umd.min.js"></script><link href="benchmark-results_files/libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="benchmark-results_files/libs/quarto-html/light-border.css" rel="stylesheet">
-<!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -22,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.7</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -37,6 +35,7 @@
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Articles</h6></li>
+    <li><a class="dropdown-item" href="../articles/BamScale-intro.html">Getting started with BamScale</a></li>
     <li><a class="dropdown-item" href="../articles/benchmark-results.html">Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads</a></li>
   </ul>
 </li>
@@ -51,108 +50,122 @@
 
 
   </div>
-</nav><div class="container template-quarto">
+</nav><div class="container template-article">
+
+
+
+
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
 
       <h1>Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads</h1>
-
-
-
-
-      <small class="dont-index">Source: <a href="https://github.com/cparsania/BamScale/blob/main/vignettes/benchmark-results.qmd" class="external-link"><code>vignettes/benchmark-results.qmd</code></a></small>
-      <div class="d-none name"><code></code></div>
+            
+      
+      <small class="dont-index">Source: <a href="https://github.com/cparsania/BamScale/blob/main/vignettes/benchmark-results.Rmd" class="external-link"><code>vignettes/benchmark-results.Rmd</code></a></small>
+      <div class="d-none name"><code>benchmark-results.Rmd</code></div>
     </div>
 
-
-
-
-
-
-    <section class="level2" data-number="1"><h2 data-number="1" id="overview">
-<span class="header-section-number">1</span> Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
+    
+    
+<div class="section level2">
+<h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p>This article combines the final benchmark runs used for the current BamScale benchmark summary:</p>
+<p>This article combines the final benchmark runs used for the current
+BamScale benchmark summary:</p>
 <ul>
 <li>
-<code>step1</code> and <code>galignments</code> from run_20260320_133141</li>
+<code>step1</code> and <code>galignments</code> from
+run_20260320_133141</li>
 <li>
 <code>seqqual</code> from run_20260320_162359</li>
 </ul>
-<p>These runs were generated with the same server-first benchmark harness, the same balanced profile family, the same deterministic case order, and the same worker/thread budget policy. <code>Seqqual</code> is reported separately because it includes both the fair compatibility track and the optimized compact track.</p>
-</section><section class="level2" data-number="2"><h2 data-number="2" id="data-loading">
-<span class="header-section-number">2</span> Data Loading<a class="anchor" aria-label="anchor" href="#data-loading"></a>
+<p>These runs were generated with the same server-first benchmark
+harness, the same balanced profile family, the same deterministic case
+order, and the same worker/thread budget policy. <code>Seqqual</code> is
+reported separately because it includes both the fair compatibility
+track and the optimized compact track.</p>
+</div>
+<div class="section level2">
+<h2 id="data-loading">Data Loading<a class="anchor" aria-label="anchor" href="#data-loading"></a>
 </h2>
-</section><section class="level2" data-number="3"><h2 data-number="3" id="benchmark-provenance">
-<span class="header-section-number">3</span> Benchmark Provenance<a class="anchor" aria-label="anchor" href="#benchmark-provenance"></a>
+</div>
+<div class="section level2">
+<h2 id="benchmark-provenance">Benchmark Provenance<a class="anchor" aria-label="anchor" href="#benchmark-provenance"></a>
 </h2>
 <ul>
 <li>Step1 and GAlignments run: run_20260320_133141</li>
 <li>SeqQual run: run_20260320_162359</li>
-<li>Step1/GAlignments results directory: /home/runner/work/BamScale/BamScale/inst/benchmarks/run_20260320_133141</li>
-<li>SeqQual results directory: /home/runner/work/BamScale/BamScale/inst/benchmarks/run_20260320_162359</li>
+<li>Step1/GAlignments results directory:
+/home/runner/work/BamScale/BamScale/inst/benchmarks/run_20260320_133141</li>
+<li>SeqQual results directory:
+/home/runner/work/BamScale/BamScale/inst/benchmarks/run_20260320_162359</li>
 </ul>
-<div class="cell">
-<div class="cell-output-display">
-<table class="table caption-top">
+<table class="table">
 <colgroup>
-<col style="width: 15%">
-<col style="width: 14%">
-<col style="width: 6%">
-<col style="width: 31%">
-<col style="width: 10%">
-<col style="width: 6%">
-<col style="width: 13%">
+<col width="15%">
+<col width="14%">
+<col width="6%">
+<col width="31%">
+<col width="10%">
+<col width="6%">
+<col width="13%">
 </colgroup>
 <thead><tr class="header">
-<th style="text-align: left;">Run</th>
-<th style="text-align: left;">Workloads</th>
-<th style="text-align: left;">Profile</th>
-<th style="text-align: left;">CPU</th>
-<th style="text-align: right;">Logical cores</th>
-<th style="text-align: right;">RAM (GB)</th>
-<th style="text-align: right;">Successful cases</th>
+<th align="left">Run</th>
+<th align="left">Workloads</th>
+<th align="left">Profile</th>
+<th align="left">CPU</th>
+<th align="right">Logical cores</th>
+<th align="right">RAM (GB)</th>
+<th align="right">Successful cases</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">run_20260320_133141</td>
-<td style="text-align: left;">step1, galignments</td>
-<td style="text-align: left;">balanced</td>
-<td style="text-align: left;">Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz</td>
-<td style="text-align: right;">96</td>
-<td style="text-align: right;">723.6</td>
-<td style="text-align: right;">32</td>
+<td align="left">run_20260320_133141</td>
+<td align="left">step1, galignments</td>
+<td align="left">balanced</td>
+<td align="left">Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz</td>
+<td align="right">96</td>
+<td align="right">723.6</td>
+<td align="right">32</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">run_20260320_162359</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">balanced</td>
-<td style="text-align: left;">Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz</td>
-<td style="text-align: right;">96</td>
-<td style="text-align: right;">723.6</td>
-<td style="text-align: right;">26</td>
+<td align="left">run_20260320_162359</td>
+<td align="left">seqqual</td>
+<td align="left">balanced</td>
+<td align="left">Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz</td>
+<td align="right">96</td>
+<td align="right">723.6</td>
+<td align="right">26</td>
 </tr>
 </tbody>
 </table>
 </div>
-</div>
-</section><section class="level2" data-number="4"><h2 data-number="4" id="methods-rationale">
-<span class="header-section-number">4</span> Methods Rationale<a class="anchor" aria-label="anchor" href="#methods-rationale"></a>
+<div class="section level2">
+<h2 id="methods-rationale">Methods Rationale<a class="anchor" aria-label="anchor" href="#methods-rationale"></a>
 </h2>
 <p>This benchmark suite covers three distinct access patterns:</p>
 <ul>
 <li>
-<code>step1</code>: alignment-metadata extraction without sequence/quality materialization. This is a good proxy for BAM filtering, fragment-length profiling, and fragment-distribution QC.</li>
+<code>step1</code>: alignment-metadata extraction without
+sequence/quality materialization. This is a good proxy for BAM
+filtering, fragment-length profiling, and fragment-distribution QC.</li>
 <li>
-<code>galignments</code>: construction of alignment objects suitable for Bioconductor workflows centered on <code>GenomicAlignments</code>.</li>
+<code>galignments</code>: construction of alignment objects suitable
+for Bioconductor workflows centered on
+<code>GenomicAlignments</code>.</li>
 <li>
-<code>seqqual</code>: full sequence and quality extraction. This is reported in two BamScale modes:
+<code>seqqual</code>: full sequence and quality extraction. This is
+reported in two BamScale modes:
 <ul>
 <li>
-<code>fair</code> compatibility mode, which is the closest comparator to <code><a href="https://rdrr.io/pkg/Rsamtools/man/scanBam.html" class="external-link">Rsamtools::scanBam</a></code>
+<code>fair</code> compatibility mode, which is the closest
+comparator to <code><a href="https://rdrr.io/pkg/Rsamtools/man/scanBam.html" class="external-link">Rsamtools::scanBam</a></code>
 </li>
 <li>
-<code>optimized</code> compact mode, which reduces internal overhead and should be interpreted as an optimized BamScale track rather than a strict apples-to-apples replacement for the compatibility path</li>
+<code>optimized</code> compact mode, which reduces internal overhead
+and should be interpreted as an optimized BamScale track rather than a
+strict apples-to-apples replacement for the compatibility path</li>
 </ul>
 </li>
 </ul>
@@ -163,702 +176,816 @@
 <li>explicit comparator baselines</li>
 <li>single-file and multi-file reporting</li>
 <li>fixed 48-thread budget for multi-file plans</li>
-</ul></section><section class="level2" data-number="5"><h2 data-number="5" id="input-files">
-<span class="header-section-number">5</span> Input Files<a class="anchor" aria-label="anchor" href="#input-files"></a>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="input-files">Input Files<a class="anchor" aria-label="anchor" href="#input-files"></a>
 </h2>
-<p>The same underlying four selected BAMs were used for both runs, with repeated files allowed to populate the 12-file multi-file benchmark set.</p>
-<div class="cell">
-<div class="cell-output-display">
-<table class="table caption-top">
+<p>The same underlying four selected BAMs were used for both runs, with
+repeated files allowed to populate the 12-file multi-file benchmark
+set.</p>
+<table class="table">
 <colgroup>
-<col style="width: 44%">
-<col style="width: 10%">
-<col style="width: 15%">
-<col style="width: 14%">
-<col style="width: 6%">
-<col style="width: 7%">
+<col width="44%">
+<col width="10%">
+<col width="15%">
+<col width="14%">
+<col width="6%">
+<col width="7%">
 </colgroup>
 <thead><tr class="header">
-<th style="text-align: left;">file</th>
-<th style="text-align: left;">source</th>
-<th style="text-align: left;">selected_for_single</th>
-<th style="text-align: left;">selected_for_multi</th>
-<th style="text-align: right;">size_mb</th>
-<th style="text-align: left;">has_index</th>
+<th align="left">file</th>
+<th align="left">source</th>
+<th align="left">selected_for_single</th>
+<th align="left">selected_for_multi</th>
+<th align="right">size_mb</th>
+<th align="left">has_index</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">/home/chiragp/.cache/R/ExperimentHub/134ab745547e62_2073</td>
-<td style="text-align: left;">chipseqDBData</td>
-<td style="text-align: left;">TRUE</td>
-<td style="text-align: left;">TRUE</td>
-<td style="text-align: right;">548.3</td>
-<td style="text-align: left;">TRUE</td>
+<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab745547e62_2073</td>
+<td align="left">chipseqDBData</td>
+<td align="left">TRUE</td>
+<td align="left">TRUE</td>
+<td align="right">548.3</td>
+<td align="left">TRUE</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">/home/chiragp/.cache/R/ExperimentHub/134ab7270c5da5_2072</td>
-<td style="text-align: left;">chipseqDBData</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: left;">TRUE</td>
-<td style="text-align: right;">320.4</td>
-<td style="text-align: left;">TRUE</td>
+<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab7270c5da5_2072</td>
+<td align="left">chipseqDBData</td>
+<td align="left">FALSE</td>
+<td align="left">TRUE</td>
+<td align="right">320.4</td>
+<td align="left">TRUE</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">/home/chiragp/.cache/R/ExperimentHub/134ab721bfa655_2071</td>
-<td style="text-align: left;">chipseqDBData</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: left;">TRUE</td>
-<td style="text-align: right;">305.2</td>
-<td style="text-align: left;">TRUE</td>
+<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab721bfa655_2071</td>
+<td align="left">chipseqDBData</td>
+<td align="left">FALSE</td>
+<td align="left">TRUE</td>
+<td align="right">305.2</td>
+<td align="left">TRUE</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">/home/chiragp/.cache/R/ExperimentHub/134ab7231ef47d_2074</td>
-<td style="text-align: left;">chipseqDBData</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: left;">TRUE</td>
-<td style="text-align: right;">227.3</td>
-<td style="text-align: left;">TRUE</td>
+<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab7231ef47d_2074</td>
+<td align="left">chipseqDBData</td>
+<td align="left">FALSE</td>
+<td align="left">TRUE</td>
+<td align="right">227.3</td>
+<td align="left">TRUE</td>
 </tr>
 </tbody>
 </table>
 </div>
-</div>
-</section><section class="level2" data-number="6"><h2 data-number="6" id="reference-counts">
-<span class="header-section-number">6</span> Reference Counts<a class="anchor" aria-label="anchor" href="#reference-counts"></a>
+<div class="section level2">
+<h2 id="reference-counts">Reference Counts<a class="anchor" aria-label="anchor" href="#reference-counts"></a>
 </h2>
-<div class="cell">
-<div class="cell-output-display">
-<table class="table caption-top" style="width:100%;">
+<table style="width:100%;" class="table">
 <colgroup>
-<col style="width: 29%">
-<col style="width: 13%">
-<col style="width: 17%">
-<col style="width: 11%">
-<col style="width: 14%">
-<col style="width: 13%">
+<col width="29%">
+<col width="13%">
+<col width="17%">
+<col width="11%">
+<col width="14%">
+<col width="13%">
 </colgroup>
 <thead><tr class="header">
-<th style="text-align: left;">run</th>
-<th style="text-align: left;">scenario</th>
-<th style="text-align: left;">workload</th>
-<th style="text-align: right;">n_files</th>
-<th style="text-align: right;">n_records</th>
-<th style="text-align: right;">total_mb</th>
+<th align="left">run</th>
+<th align="left">scenario</th>
+<th align="left">workload</th>
+<th align="right">n_files</th>
+<th align="right">n_records</th>
+<th align="right">total_mb</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">run_20260320_133141</td>
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: right;">12</td>
-<td style="text-align: right;">77543925</td>
-<td style="text-align: right;">4203.4</td>
+<td align="left">run_20260320_133141</td>
+<td align="left">multi</td>
+<td align="left">galignments</td>
+<td align="right">12</td>
+<td align="right">77543925</td>
+<td align="right">4203.4</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">run_20260320_133141</td>
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: right;">12</td>
-<td style="text-align: right;">132482148</td>
-<td style="text-align: right;">4203.4</td>
+<td align="left">run_20260320_133141</td>
+<td align="left">multi</td>
+<td align="left">step1</td>
+<td align="right">12</td>
+<td align="right">132482148</td>
+<td align="right">4203.4</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">run_20260320_133141</td>
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">4670364</td>
-<td style="text-align: right;">548.3</td>
+<td align="left">run_20260320_133141</td>
+<td align="left">single</td>
+<td align="left">galignments</td>
+<td align="right">1</td>
+<td align="right">4670364</td>
+<td align="right">548.3</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">run_20260320_133141</td>
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">16675372</td>
-<td style="text-align: right;">548.3</td>
+<td align="left">run_20260320_133141</td>
+<td align="left">single</td>
+<td align="left">step1</td>
+<td align="right">1</td>
+<td align="right">16675372</td>
+<td align="right">548.3</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">run_20260320_162359</td>
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: right;">12</td>
-<td style="text-align: right;">132482148</td>
-<td style="text-align: right;">4203.4</td>
+<td align="left">run_20260320_162359</td>
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="right">12</td>
+<td align="right">132482148</td>
+<td align="right">4203.4</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">run_20260320_162359</td>
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">16675372</td>
-<td style="text-align: right;">548.3</td>
+<td align="left">run_20260320_162359</td>
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="right">1</td>
+<td align="right">16675372</td>
+<td align="right">548.3</td>
 </tr>
 </tbody>
 </table>
 </div>
-</div>
-</section><section class="level2" data-number="7"><h2 data-number="7" id="best-observed-summary">
-<span class="header-section-number">7</span> Best-Observed Summary<a class="anchor" aria-label="anchor" href="#best-observed-summary"></a>
+<div class="section level2">
+<h2 id="best-observed-summary">Best-Observed Summary<a class="anchor" aria-label="anchor" href="#best-observed-summary"></a>
 </h2>
-<div class="cell">
-<div class="cell-output-display">
-<table class="table caption-top" style="width:100%;">
+<table style="width:100%;" class="table">
 <colgroup>
-<col style="width: 7%">
-<col style="width: 10%">
-<col style="width: 8%">
-<col style="width: 15%">
-<col style="width: 41%">
-<col style="width: 4%">
-<col style="width: 13%">
+<col width="7%">
+<col width="10%">
+<col width="8%">
+<col width="15%">
+<col width="41%">
+<col width="4%">
+<col width="13%">
 </colgroup>
 <thead><tr class="header">
-<th style="text-align: left;">Scenario</th>
-<th style="text-align: left;">Workload</th>
-<th style="text-align: left;">Track</th>
-<th style="text-align: left;">Method family</th>
-<th style="text-align: left;">Method</th>
-<th style="text-align: left;">Plan</th>
-<th style="text-align: right;">Median time (s)</th>
+<th align="left">Scenario</th>
+<th align="left">Workload</th>
+<th align="left">Track</th>
+<th align="left">Method family</th>
+<th align="left">Method</th>
+<th align="left">Plan</th>
+<th align="right">Median time (s)</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale (balanced budget)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">61.204</td>
+<td align="left">multi</td>
+<td align="left">galignments</td>
+<td align="left">fair</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale (balanced budget)</td>
+<td align="left">1x48</td>
+<td align="right">61.204</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">GenomicAlignments</td>
-<td style="text-align: left;">GenomicAlignments::readGAlignments + BiocParallel</td>
-<td style="text-align: left;">12x1</td>
-<td style="text-align: right;">90.777</td>
+<td align="left">multi</td>
+<td align="left">galignments</td>
+<td align="left">fair</td>
+<td align="left">GenomicAlignments</td>
+<td align="left">GenomicAlignments::readGAlignments + BiocParallel</td>
+<td align="left">12x1</td>
+<td align="right">90.777</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale (balanced budget)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">181.277</td>
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">fair</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale (balanced budget)</td>
+<td align="left">1x48</td>
+<td align="right">181.277</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">Rsamtools</td>
-<td style="text-align: left;">Rsamtools::scanBam + BiocParallel</td>
-<td style="text-align: left;">12x1</td>
-<td style="text-align: right;">134.667</td>
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam + BiocParallel</td>
+<td align="left">12x1</td>
+<td align="right">134.667</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">optimized</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale (compact seqqual budget)</td>
-<td style="text-align: left;">12x4</td>
-<td style="text-align: right;">175.451</td>
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">optimized</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale (compact seqqual budget)</td>
+<td align="left">12x4</td>
+<td align="right">175.451</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale (balanced budget)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">68.469</td>
+<td align="left">multi</td>
+<td align="left">step1</td>
+<td align="left">fair</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale (balanced budget)</td>
+<td align="left">1x48</td>
+<td align="right">68.469</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">Rsamtools</td>
-<td style="text-align: left;">Rsamtools::scanBam + BiocParallel</td>
-<td style="text-align: left;">12x1</td>
-<td style="text-align: right;">107.882</td>
+<td align="left">multi</td>
+<td align="left">step1</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam + BiocParallel</td>
+<td align="left">12x1</td>
+<td align="right">107.882</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">4.047</td>
+<td align="left">single</td>
+<td align="left">galignments</td>
+<td align="left">fair</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">4.047</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">GenomicAlignments</td>
-<td style="text-align: left;">GenomicAlignments::readGAlignments</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">10.568</td>
+<td align="left">single</td>
+<td align="left">galignments</td>
+<td align="left">fair</td>
+<td align="left">GenomicAlignments</td>
+<td align="left">GenomicAlignments::readGAlignments</td>
+<td align="left">1x1</td>
+<td align="right">10.568</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">26.295</td>
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">fair</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">26.295</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">Rsamtools</td>
-<td style="text-align: left;">Rsamtools::scanBam</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">24.327</td>
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam</td>
+<td align="left">1x1</td>
+<td align="right">24.327</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">optimized</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale (compact seqqual)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">15.026</td>
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">optimized</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale (compact seqqual)</td>
+<td align="left">1x48</td>
+<td align="right">15.026</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">8.035</td>
+<td align="left">single</td>
+<td align="left">step1</td>
+<td align="left">fair</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">8.035</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">Rsamtools</td>
-<td style="text-align: left;">Rsamtools::scanBam</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">15.403</td>
+<td align="left">single</td>
+<td align="left">step1</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam</td>
+<td align="left">1x1</td>
+<td align="right">15.403</td>
 </tr>
 </tbody>
 </table>
 </div>
-</div>
-</section><section class="level2" data-number="8"><h2 data-number="8" id="bamscale-versus-comparator-fold-change">
-<span class="header-section-number">8</span> BamScale-versus-Comparator Fold Change<a class="anchor" aria-label="anchor" href="#bamscale-versus-comparator-fold-change"></a>
+<div class="section level2">
+<h2 id="bamscale-versus-comparator-fold-change">BamScale-versus-Comparator Fold Change<a class="anchor" aria-label="anchor" href="#bamscale-versus-comparator-fold-change"></a>
 </h2>
-<div class="cell">
-<div class="cell-output-display">
-<table class="table caption-top">
+<table class="table">
 <colgroup>
-<col style="width: 4%">
-<col style="width: 5%">
-<col style="width: 4%">
-<col style="width: 15%">
-<col style="width: 6%">
-<col style="width: 6%">
-<col style="width: 23%">
-<col style="width: 7%">
-<col style="width: 6%">
-<col style="width: 10%">
-<col style="width: 9%">
+<col width="3%">
+<col width="5%">
+<col width="4%">
+<col width="7%">
+<col width="20%">
+<col width="6%">
+<col width="8%">
+<col width="14%">
+<col width="5%">
+<col width="7%">
+<col width="8%">
+<col width="7%">
 </colgroup>
 <thead><tr class="header">
-<th style="text-align: left;">Scenario</th>
-<th style="text-align: left;">Workload</th>
-<th style="text-align: left;">Track</th>
-<th style="text-align: left;">BamScale method</th>
-<th style="text-align: left;">BamScale plan</th>
-<th style="text-align: right;">BamScale (s)</th>
-<th style="text-align: left;">Comparator method</th>
-<th style="text-align: left;">Comparator plan</th>
-<th style="text-align: right;">Comparator (s)</th>
-<th style="text-align: right;">Comparator / BamScale</th>
-<th style="text-align: right;">BamScale faster (%)</th>
+<th align="left">Scenario</th>
+<th align="left">Workload</th>
+<th align="left">Track</th>
+<th align="left">Comparator family</th>
+<th align="left">Comparator method</th>
+<th align="left">Comparator plan</th>
+<th align="right">Comparator time (s)</th>
+<th align="left">BamScale method</th>
+<th align="left">BamScale plan</th>
+<th align="right">BamScale time (s)</th>
+<th align="right">Comparator/BamScale</th>
+<th align="right">BamScale % faster</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">4.047</td>
-<td style="text-align: left;">GenomicAlignments::readGAlignments</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">10.568</td>
-<td style="text-align: right;">2.611</td>
-<td style="text-align: right;">61.7</td>
+<td align="left">single</td>
+<td align="left">galignments</td>
+<td align="left">fair</td>
+<td align="left">GenomicAlignments</td>
+<td align="left">GenomicAlignments::readGAlignments</td>
+<td align="left">1x1</td>
+<td align="right">10.568</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">4.047</td>
+<td align="right">2.611</td>
+<td align="right">61.705</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">26.295</td>
-<td style="text-align: left;">Rsamtools::scanBam</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">24.327</td>
-<td style="text-align: right;">0.925</td>
-<td style="text-align: right;">-8.1</td>
+<td align="left">single</td>
+<td align="left">step1</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam</td>
+<td align="left">1x1</td>
+<td align="right">15.403</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">8.035</td>
+<td align="right">1.917</td>
+<td align="right">47.835</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">optimized</td>
-<td style="text-align: left;">BamScale (compact seqqual)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">15.026</td>
-<td style="text-align: left;">Rsamtools::scanBam</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">24.327</td>
-<td style="text-align: right;">1.619</td>
-<td style="text-align: right;">38.2</td>
+<td align="left">multi</td>
+<td align="left">galignments</td>
+<td align="left">fair</td>
+<td align="left">GenomicAlignments</td>
+<td align="left">GenomicAlignments::readGAlignments + BiocParallel</td>
+<td align="left">12x1</td>
+<td align="right">90.777</td>
+<td align="left">BamScale (balanced budget)</td>
+<td align="left">1x48</td>
+<td align="right">61.204</td>
+<td align="right">1.483</td>
+<td align="right">32.578</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">8.035</td>
-<td style="text-align: left;">Rsamtools::scanBam</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">15.403</td>
-<td style="text-align: right;">1.917</td>
-<td style="text-align: right;">47.8</td>
+<td align="left">multi</td>
+<td align="left">step1</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam + BiocParallel</td>
+<td align="left">12x1</td>
+<td align="right">107.882</td>
+<td align="left">BamScale (balanced budget)</td>
+<td align="left">1x48</td>
+<td align="right">68.469</td>
+<td align="right">1.576</td>
+<td align="right">36.534</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">galignments</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale (balanced budget)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">61.204</td>
-<td style="text-align: left;">GenomicAlignments::readGAlignments + BiocParallel</td>
-<td style="text-align: left;">12x1</td>
-<td style="text-align: right;">90.777</td>
-<td style="text-align: right;">1.483</td>
-<td style="text-align: right;">32.6</td>
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam</td>
+<td align="left">1x1</td>
+<td align="right">24.327</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">26.295</td>
+<td align="right">0.925</td>
+<td align="right">-8.088</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale (balanced budget)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">181.277</td>
-<td style="text-align: left;">Rsamtools::scanBam + BiocParallel</td>
-<td style="text-align: left;">12x1</td>
-<td style="text-align: right;">134.667</td>
-<td style="text-align: right;">0.743</td>
-<td style="text-align: right;">-34.6</td>
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">optimized</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam</td>
+<td align="left">1x1</td>
+<td align="right">24.327</td>
+<td align="left">BamScale (compact seqqual)</td>
+<td align="left">1x48</td>
+<td align="right">15.026</td>
+<td align="right">1.619</td>
+<td align="right">38.232</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">seqqual</td>
-<td style="text-align: left;">optimized</td>
-<td style="text-align: left;">BamScale (compact seqqual budget)</td>
-<td style="text-align: left;">12x4</td>
-<td style="text-align: right;">175.451</td>
-<td style="text-align: left;">Rsamtools::scanBam + BiocParallel</td>
-<td style="text-align: left;">12x1</td>
-<td style="text-align: right;">134.667</td>
-<td style="text-align: right;">0.768</td>
-<td style="text-align: right;">-30.3</td>
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">fair</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam + BiocParallel</td>
+<td align="left">12x1</td>
+<td align="right">134.667</td>
+<td align="left">BamScale (balanced budget)</td>
+<td align="left">1x48</td>
+<td align="right">181.277</td>
+<td align="right">0.743</td>
+<td align="right">-34.611</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">step1</td>
-<td style="text-align: left;">fair</td>
-<td style="text-align: left;">BamScale (balanced budget)</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">68.469</td>
-<td style="text-align: left;">Rsamtools::scanBam + BiocParallel</td>
-<td style="text-align: left;">12x1</td>
-<td style="text-align: right;">107.882</td>
-<td style="text-align: right;">1.576</td>
-<td style="text-align: right;">36.5</td>
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">optimized</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam + BiocParallel</td>
+<td align="left">12x1</td>
+<td align="right">134.667</td>
+<td align="left">BamScale (compact seqqual budget)</td>
+<td align="left">12x4</td>
+<td align="right">175.451</td>
+<td align="right">0.768</td>
+<td align="right">-30.285</td>
 </tr>
 </tbody>
 </table>
+<p><img src="benchmark-results_files/figure-html/fold-change-plot-1.png" class="r-plt" alt="" width="864"></p>
 </div>
-</div>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-7-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section><section class="level2" data-number="9"><h2 data-number="9" id="step1-and-galignments-single-file-scaling">
-<span class="header-section-number">9</span> Step1 and GAlignments: Single-File Scaling<a class="anchor" aria-label="anchor" href="#step1-and-galignments-single-file-scaling"></a>
+<div class="section level2">
+<h2 id="single-file-step1">Single-File <code>step1</code><a class="anchor" aria-label="anchor" href="#single-file-step1"></a>
 </h2>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-8-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-9-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section><section class="level2" data-number="10"><h2 data-number="10" id="step1-multi-file-scaling">
-<span class="header-section-number">10</span> Step1: Multi-File Scaling<a class="anchor" aria-label="anchor" href="#step1-multi-file-scaling"></a>
-</h2>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-10-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section><section class="level2" data-number="11"><h2 data-number="11" id="galignments-multi-file-scaling">
-<span class="header-section-number">11</span> GAlignments: Multi-File Scaling<a class="anchor" aria-label="anchor" href="#galignments-multi-file-scaling"></a>
-</h2>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-11-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section><section class="level2" data-number="12"><h2 data-number="12" id="bamscale-worker-thread-tradeoff">
-<span class="header-section-number">12</span> BamScale Worker-Thread Tradeoff<a class="anchor" aria-label="anchor" href="#bamscale-worker-thread-tradeoff"></a>
-</h2>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-12-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section><section class="level2" data-number="13"><h2 data-number="13" id="seqqual-single-file-fair-and-compact-tracks">
-<span class="header-section-number">13</span> SeqQual: Single-File Fair and Compact Tracks<a class="anchor" aria-label="anchor" href="#seqqual-single-file-fair-and-compact-tracks"></a>
-</h2>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-13-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section><section class="level2" data-number="14"><h2 data-number="14" id="seqqual-multi-file-fair-and-compact-tracks">
-<span class="header-section-number">14</span> SeqQual: Multi-File Fair and Compact Tracks<a class="anchor" aria-label="anchor" href="#seqqual-multi-file-fair-and-compact-tracks"></a>
-</h2>
-<div class="cell">
-<div class="cell-output-display">
-<div>
-<figure><p><img src="benchmark-results_files/figure-html/unnamed-chunk-14-1.png" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-</section><section class="level2" data-number="15"><h2 data-number="15" id="seqqual-compact-gain">
-<span class="header-section-number">15</span> SeqQual Compact Gain<a class="anchor" aria-label="anchor" href="#seqqual-compact-gain"></a>
-</h2>
-<div class="cell">
-<div class="cell-output-display">
-<table class="table caption-top">
+<p><img src="benchmark-results_files/figure-html/step1-single-plot-1.png" class="r-plt" alt="" width="720"></p>
+<table class="table">
 <thead><tr class="header">
-<th style="text-align: left;">Scenario</th>
-<th style="text-align: left;">Plan</th>
-<th style="text-align: right;">Compatible (s)</th>
-<th style="text-align: right;">Compact (s)</th>
-<th style="text-align: right;">Compatible / compact</th>
+<th align="left">Method family</th>
+<th align="left">Method</th>
+<th align="left">Plan</th>
+<th align="right">Median time (s)</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">1x1</td>
-<td style="text-align: right;">35.683</td>
-<td style="text-align: right;">25.530</td>
-<td style="text-align: right;">1.398</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">8.0350</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">1x12</td>
-<td style="text-align: right;">27.620</td>
-<td style="text-align: right;">17.098</td>
-<td style="text-align: right;">1.615</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x24</td>
+<td align="right">8.9795</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">1x24</td>
-<td style="text-align: right;">28.339</td>
-<td style="text-align: right;">16.444</td>
-<td style="text-align: right;">1.723</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x12</td>
+<td align="right">9.3775</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">1x4</td>
-<td style="text-align: right;">31.678</td>
-<td style="text-align: right;">19.878</td>
-<td style="text-align: right;">1.594</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x4</td>
+<td align="right">11.0565</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">single</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">26.295</td>
-<td style="text-align: right;">15.026</td>
-<td style="text-align: right;">1.750</td>
+<td align="left">Rsamtools</td>
+<td align="left">Rsamtools::scanBam</td>
+<td align="left">1x1</td>
+<td align="right">15.4030</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">12x4</td>
-<td style="text-align: right;">270.889</td>
-<td style="text-align: right;">175.451</td>
-<td style="text-align: right;">1.544</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">1x48</td>
-<td style="text-align: right;">181.277</td>
-<td style="text-align: right;">186.321</td>
-<td style="text-align: right;">0.973</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">2x24</td>
-<td style="text-align: right;">573.752</td>
-<td style="text-align: right;">337.596</td>
-<td style="text-align: right;">1.700</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">4x12</td>
-<td style="text-align: right;">404.183</td>
-<td style="text-align: right;">241.524</td>
-<td style="text-align: right;">1.673</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">multi</td>
-<td style="text-align: left;">8x6</td>
-<td style="text-align: right;">361.750</td>
-<td style="text-align: right;">210.290</td>
-<td style="text-align: right;">1.720</td>
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x1</td>
+<td align="right">16.3500</td>
 </tr>
 </tbody>
 </table>
 </div>
-</div>
-</section><section class="level2" data-number="16"><h2 data-number="16" id="benchmark-interpretation">
-<span class="header-section-number">16</span> Benchmark Interpretation<a class="anchor" aria-label="anchor" href="#benchmark-interpretation"></a>
+<div class="section level2">
+<h2 id="single-file-galignments">Single-File <code>galignments</code><a class="anchor" aria-label="anchor" href="#single-file-galignments"></a>
 </h2>
-<p>This combined benchmark supports the following conclusions:</p>
-<ol type="1">
-<li>BamScale showed clear single-file and best-case multi-file advantages for both <code>step1</code> and <code>galignments</code>, with the strongest multi-file points occurring in the low-worker, high-thread regime.</li>
-<li>For <code>seqqual</code>, BamScale’s fair compatibility track remained slower than the Rsamtools comparator, but the optimized compact track substantially reduced that gap and produced a clear single-file win.</li>
-<li>In multi-file <code>seqqual</code>, the compact track improved on the fair compatibility path but did not surpass the best Rsamtools multi-file baseline in this run.</li>
-<li>Overall, <code>step1</code> and <code>galignments</code> are the clearest BamScale strengths, while <code>seqqual</code> compact mode represents a substantial optimization that improves, but does not fully close, the multi-file gap to the comparator.</li>
-</ol></section><script id="quarto-html-after-body" type="application/javascript">
-  window.document.addEventListener("DOMContentLoaded", function (event) {
-      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
-      var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp('/' + window.location.host + '/');
-      var isInternal = (href) => {
-          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
-      }
-      // Inspect non-navigation links and adorn them if external
-     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
-      for (var i=0; i<links.length; i++) {
-        const link = links[i];
-        if (!isInternal(link.href)) {
-          // undo the damage that might have been done by quarto-nav.js in the case of
-          // links that we want to consider external
-          if (link.dataset.originalHref !== undefined) {
-            link.href = link.dataset.originalHref;
-          }
-        }
-      }
-    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
-      const config = {
-        allowHTML: true,
-        maxWidth: 500,
-        delay: 100,
-        arrow: false,
-        appendTo: function(el) {
-            return el.parentElement;
-        },
-        interactive: true,
-        interactiveBorder: 10,
-        theme: 'light-border',
-        placement: 'bottom-start',
-      };
-      if (contentFn) {
-        config.content = contentFn;
-      }
-      if (onTriggerFn) {
-        config.onTrigger = onTriggerFn;
-      }
-      if (onUntriggerFn) {
-        config.onUntrigger = onUntriggerFn;
-      }
-      window.tippy(el, config);
-    }
-    const findCites = (el) => {
-      const parentEl = el.parentElement;
-      if (parentEl) {
-        const cites = parentEl.dataset.cites;
-        if (cites) {
-          return {
-            el,
-            cites: cites.split(' ')
-          };
-        } else {
-          return findCites(el.parentElement)
-        }
-      } else {
-        return undefined;
-      }
-    };
-    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
-    for (var i=0; i<bibliorefs.length; i++) {
-      const ref = bibliorefs[i];
-      const citeInfo = findCites(ref);
-      if (citeInfo) {
-        tippyHover(citeInfo.el, function() {
-          var popup = window.document.createElement('div');
-          citeInfo.cites.forEach(function(cite) {
-            var citeDiv = window.document.createElement('div');
-            citeDiv.classList.add('hanging-indent');
-            citeDiv.classList.add('csl-entry');
-            var biblioDiv = window.document.getElementById('ref-' + cite);
-            if (biblioDiv) {
-              citeDiv.innerHTML = biblioDiv.innerHTML;
-            }
-            popup.appendChild(citeDiv);
-          });
-          return popup.innerHTML;
-        });
-      }
-    }
-  });
-  </script></main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
+<p><img src="benchmark-results_files/figure-html/galignments-single-plot-1.png" class="r-plt" alt="" width="720"></p>
+<table class="table">
+<colgroup>
+<col width="24%">
+<col width="47%">
+<col width="6%">
+<col width="21%">
+</colgroup>
+<thead><tr class="header">
+<th align="left">Method family</th>
+<th align="left">Method</th>
+<th align="left">Plan</th>
+<th align="right">Median time (s)</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x48</td>
+<td align="right">4.0470</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x24</td>
+<td align="right">4.1920</td>
+</tr>
+<tr class="odd">
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x12</td>
+<td align="right">4.7585</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x4</td>
+<td align="right">6.6230</td>
+</tr>
+<tr class="odd">
+<td align="left">GenomicAlignments</td>
+<td align="left">GenomicAlignments::readGAlignments</td>
+<td align="left">1x1</td>
+<td align="right">10.5680</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale</td>
+<td align="left">BamScale</td>
+<td align="left">1x1</td>
+<td align="right">11.0405</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section level2">
+<h2 id="multi-file-step1">Multi-File <code>step1</code><a class="anchor" aria-label="anchor" href="#multi-file-step1"></a>
+</h2>
+<p><img src="benchmark-results_files/figure-html/step1-multi-plot-1.png" class="r-plt" alt="" width="720"></p>
+</div>
+<div class="section level2">
+<h2 id="multi-file-galignments">Multi-File <code>galignments</code><a class="anchor" aria-label="anchor" href="#multi-file-galignments"></a>
+</h2>
+<p><img src="benchmark-results_files/figure-html/galignments-multi-plot-1.png" class="r-plt" alt="" width="720"></p>
+</div>
+<div class="section level2">
+<h2 id="single-file-seqqual">Single-File <code>seqqual</code><a class="anchor" aria-label="anchor" href="#single-file-seqqual"></a>
+</h2>
+<p><img src="benchmark-results_files/figure-html/seqqual-single-plot-1.png" class="r-plt" alt="" width="768"></p>
+<table class="table">
+<thead><tr class="header">
+<th align="left">Method</th>
+<th align="left">Plan</th>
+<th align="right">Median time (s)</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="left">BamScale (compact)</td>
+<td align="left">1x48</td>
+<td align="right">15.0265</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale (compact)</td>
+<td align="left">1x24</td>
+<td align="right">16.4440</td>
+</tr>
+<tr class="odd">
+<td align="left">BamScale (compact)</td>
+<td align="left">1x12</td>
+<td align="right">17.0985</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale (compact)</td>
+<td align="left">1x4</td>
+<td align="right">19.8780</td>
+</tr>
+<tr class="odd">
+<td align="left">Rsamtools::scanBam</td>
+<td align="left">1x1</td>
+<td align="right">24.3275</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale (compact)</td>
+<td align="left">1x1</td>
+<td align="right">25.5300</td>
+</tr>
+<tr class="odd">
+<td align="left">BamScale (compatible)</td>
+<td align="left">1x48</td>
+<td align="right">26.2950</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale (compatible)</td>
+<td align="left">1x12</td>
+<td align="right">27.6200</td>
+</tr>
+<tr class="odd">
+<td align="left">BamScale (compatible)</td>
+<td align="left">1x24</td>
+<td align="right">28.3390</td>
+</tr>
+<tr class="even">
+<td align="left">BamScale (compatible)</td>
+<td align="left">1x4</td>
+<td align="right">31.6780</td>
+</tr>
+<tr class="odd">
+<td align="left">BamScale (compatible)</td>
+<td align="left">1x1</td>
+<td align="right">35.6830</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section level2">
+<h2 id="multi-file-seqqual">Multi-File <code>seqqual</code><a class="anchor" aria-label="anchor" href="#multi-file-seqqual"></a>
+</h2>
+<p><img src="benchmark-results_files/figure-html/seqqual-multi-plot-1.png" class="r-plt" alt="" width="768"></p>
+</div>
+<div class="section level2">
+<h2 id="compact-versus-compatible-seqqual">Compact-versus-Compatible <code>seqqual</code><a class="anchor" aria-label="anchor" href="#compact-versus-compatible-seqqual"></a>
+</h2>
+<table class="table">
+<colgroup>
+<col width="11%">
+<col width="11%">
+<col width="6%">
+<col width="25%">
+<col width="21%">
+<col width="24%">
+</colgroup>
+<thead><tr class="header">
+<th align="left">Scenario</th>
+<th align="left">Workload</th>
+<th align="left">Plan</th>
+<th align="right">Compatible time (s)</th>
+<th align="right">Compact time (s)</th>
+<th align="right">Compatible/Compact</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">1x48</td>
+<td align="right">181.277</td>
+<td align="right">186.321</td>
+<td align="right">0.973</td>
+</tr>
+<tr class="even">
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">2x24</td>
+<td align="right">573.752</td>
+<td align="right">337.596</td>
+<td align="right">1.700</td>
+</tr>
+<tr class="odd">
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">4x12</td>
+<td align="right">404.183</td>
+<td align="right">241.524</td>
+<td align="right">1.673</td>
+</tr>
+<tr class="even">
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">8x6</td>
+<td align="right">361.750</td>
+<td align="right">210.290</td>
+<td align="right">1.720</td>
+</tr>
+<tr class="odd">
+<td align="left">multi</td>
+<td align="left">seqqual</td>
+<td align="left">12x4</td>
+<td align="right">270.889</td>
+<td align="right">175.451</td>
+<td align="right">1.544</td>
+</tr>
+<tr class="even">
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">1x1</td>
+<td align="right">35.683</td>
+<td align="right">25.530</td>
+<td align="right">1.398</td>
+</tr>
+<tr class="odd">
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">1x4</td>
+<td align="right">31.678</td>
+<td align="right">19.878</td>
+<td align="right">1.594</td>
+</tr>
+<tr class="even">
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">1x12</td>
+<td align="right">27.620</td>
+<td align="right">17.098</td>
+<td align="right">1.615</td>
+</tr>
+<tr class="odd">
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">1x24</td>
+<td align="right">28.339</td>
+<td align="right">16.444</td>
+<td align="right">1.723</td>
+</tr>
+<tr class="even">
+<td align="left">single</td>
+<td align="left">seqqual</td>
+<td align="left">1x48</td>
+<td align="right">26.295</td>
+<td align="right">15.026</td>
+<td align="right">1.750</td>
+</tr>
+</tbody>
+</table>
+<p><img src="benchmark-results_files/figure-html/compact-gain-plot-1.png" class="r-plt" alt="" width="720"></p>
+</div>
+<div class="section level2">
+<h2 id="interpretation">Interpretation<a class="anchor" aria-label="anchor" href="#interpretation"></a>
+</h2>
+<p>The benchmark shows a consistent pattern across the final runs:</p>
+<ul>
+<li>
+<code>step1</code> and <code>galignments</code> are the strongest
+BamScale workloads.</li>
+<li>For these workloads, the best BamScale plans are usually low-worker,
+high-thread configurations, indicating that within-file multithreading
+contributes more than aggressively increasing the number of file
+workers.</li>
+<li>
+<code>Seqqual</code> is more difficult because sequence and quality
+extraction amplifies output-construction overhead.</li>
+<li>BamScale compact mode narrows this gap substantially and produces
+the strongest single-file <code>seqqual</code> result, but the best
+multi-file <code>seqqual</code> comparator remains faster.</li>
+</ul>
+<p>In practical terms, these results support the following guidance:</p>
+<ul>
+<li>use BamScale when metadata extraction or alignment-object
+construction is a bottleneck in BAM-heavy Bioconductor workflows</li>
+<li>favor low-worker, high-thread plans when traversing one or a small
+number of large BAM files</li>
+<li>interpret compact <code>seqqual</code> as an optimized throughput
+path rather than as a strict compatibility benchmark</li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="session-information">Session Information<a class="anchor" aria-label="anchor" href="#session-information"></a>
+</h2>
+<pre><code><span><span class="co">## R version 4.5.3 (2026-03-11)</span></span>
+<span><span class="co">## Platform: x86_64-pc-linux-gnu</span></span>
+<span><span class="co">## Running under: Ubuntu 24.04.4 LTS</span></span>
+<span><span class="co">## </span></span>
+<span><span class="co">## Matrix products: default</span></span>
+<span><span class="co">## BLAS:   /usr/lib/x86_64-linux-gnu/openblas-pthread/libblas.so.3 </span></span>
+<span><span class="co">## LAPACK: /usr/lib/x86_64-linux-gnu/openblas-pthread/libopenblasp-r0.3.26.so;  LAPACK version 3.12.0</span></span>
+<span><span class="co">## </span></span>
+<span><span class="co">## locale:</span></span>
+<span><span class="co">##  [1] LC_CTYPE=C.UTF-8       LC_NUMERIC=C           LC_TIME=C.UTF-8       </span></span>
+<span><span class="co">##  [4] LC_COLLATE=C.UTF-8     LC_MONETARY=C.UTF-8    LC_MESSAGES=C.UTF-8   </span></span>
+<span><span class="co">##  [7] LC_PAPER=C.UTF-8       LC_NAME=C              LC_ADDRESS=C          </span></span>
+<span><span class="co">## [10] LC_TELEPHONE=C         LC_MEASUREMENT=C.UTF-8 LC_IDENTIFICATION=C   </span></span>
+<span><span class="co">## </span></span>
+<span><span class="co">## time zone: UTC</span></span>
+<span><span class="co">## tzcode source: system (glibc)</span></span>
+<span><span class="co">## </span></span>
+<span><span class="co">## attached base packages:</span></span>
+<span><span class="co">## [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
+<span><span class="co">## </span></span>
+<span><span class="co">## other attached packages:</span></span>
+<span><span class="co">## [1] scales_1.4.0     ggplot2_4.0.2    tidyr_1.3.2      dplyr_1.2.1     </span></span>
+<span><span class="co">## [5] readr_2.2.0      BiocStyle_2.38.0</span></span>
+<span><span class="co">## </span></span>
+<span><span class="co">## loaded via a namespace (and not attached):</span></span>
+<span><span class="co">##  [1] bit_4.6.0           gtable_0.3.6        jsonlite_2.0.0     </span></span>
+<span><span class="co">##  [4] crayon_1.5.3        compiler_4.5.3      BiocManager_1.30.27</span></span>
+<span><span class="co">##  [7] tidyselect_1.2.1    parallel_4.5.3      jquerylib_0.1.4    </span></span>
+<span><span class="co">## [10] systemfonts_1.3.2   textshaping_1.0.5   yaml_2.3.12        </span></span>
+<span><span class="co">## [13] fastmap_1.2.0       R6_2.6.1            labeling_0.4.3     </span></span>
+<span><span class="co">## [16] generics_0.1.4      knitr_1.51          tibble_3.3.1       </span></span>
+<span><span class="co">## [19] bookdown_0.46       desc_1.4.3          RColorBrewer_1.1-3 </span></span>
+<span><span class="co">## [22] bslib_0.10.0        pillar_1.11.1       tzdb_0.5.0         </span></span>
+<span><span class="co">## [25] rlang_1.2.0         cachem_1.1.0        xfun_0.57          </span></span>
+<span><span class="co">## [28] S7_0.2.1-1          fs_2.1.0            sass_0.4.10        </span></span>
+<span><span class="co">## [31] bit64_4.6.0-1       cli_3.6.6           withr_3.0.2        </span></span>
+<span><span class="co">## [34] pkgdown_2.2.0       magrittr_2.0.5      digest_0.6.39      </span></span>
+<span><span class="co">## [37] grid_4.5.3          vroom_1.7.1         hms_1.1.4          </span></span>
+<span><span class="co">## [40] lifecycle_1.0.5     vctrs_0.7.3         evaluate_1.0.5     </span></span>
+<span><span class="co">## [43] glue_1.8.1          farver_2.1.2        ragg_1.5.2         </span></span>
+<span><span class="co">## [46] rmarkdown_2.31      purrr_1.2.2         tools_4.5.3        </span></span>
+<span><span class="co">## [49] pkgconfig_2.0.3     htmltools_0.5.9</span></span></code></pre>
+</div>
+  </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
 </div>
+
 
 
     <footer><div class="pkgdown-footer-left">

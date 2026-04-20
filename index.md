@@ -138,8 +138,41 @@ sq <- bam_read(
   threads = 4
 )
 
+# 2b) Seq/qual in compact mode (returns raw vectors, not plain strings)
+sq_compact <- bam_read(
+  file = bam,
+  what = c("qname", "qwidth", "seq", "qual"),
+  as = "data.frame",
+  seqqual_mode = "compact",
+  threads = 4
+)
+
 # 3) Fast chromosome-level counts
 cnt <- bam_count(file = bam, threads = 4)
+```
+
+### Interpreting `seqqual_mode = "compact"`
+
+Compact mode is an optimized BamScale-specific representation for `seq`
+and `qual`. It does not return ordinary character strings:
+
+- `seq` is returned as a list-column of `raw` vectors containing
+  BAM-native packed sequence bytes (two bases per byte)
+- `qual` is returned as a list-column of `raw` vectors containing
+  per-base numeric Phred bytes
+- `qwidth` is required to decode compact `seq` back to base letters
+  correctly
+- a quality byte value of `255` represents missing quality
+
+Compact mode is therefore best interpreted as a lower-level,
+deferred-decoding representation. It is useful when extraction
+throughput matters more than immediate string materialization. If
+downstream code expects ordinary sequence or quality strings, use
+`seqqual_mode = "compatible"` instead, or decode compact output
+explicitly:
+
+``` r
+sq_compact_decoded <- decode_seqqual_compact(sq_compact)
 ```
 
 ## Parallelism Model
@@ -165,7 +198,7 @@ relevant cross-tool comparisons:
 - pkgdown article:
   - <https://cparsania.github.io/BamScale/articles/benchmark-results.html>
 - source:
-  - `vignettes/benchmark-results.qmd`
+  - `vignettes/benchmark-results.Rmd`
 
 The article includes:
 
