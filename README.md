@@ -1,11 +1,14 @@
 # BamScale
 
-<img src="man/figures/BamScale-logo.png" align="right" height="170" alt="BamScale logo" />
+<img src="man/figures/BamScale-logo.png" alt="BamScale logo" width="170" style="float: right; margin: 0 0 1rem 1rem;" />
 
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
 [![pkgdown](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml)
 [![Bioconductor](https://img.shields.io/badge/Bioconductor-submission_in_progress-orange)](https://bioconductor.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Bioconductor Downloads](https://bioconductor.org/shields/downloads/release/BamScale.svg)](https://bioconductor.org/packages/stats/bioc/BamScale/)
+[![Bioconductor Time](https://bioconductor.org/shields/years-in-bioc/BamScale.svg)](https://bioconductor.org/packages/release/bioc/html/BamScale.html)
+
 
 BamScale is a multithreaded BAM processing package for R built on top of the `ompBAM` C++ engine. It is designed for Bioconductor users who need high-throughput BAM parsing while preserving familiar `Rsamtools` and `GenomicAlignments` workflow patterns.
 
