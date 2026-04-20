@@ -19,3 +19,11 @@ compatibility mode.
 Decodes \code{qual} values returned by \code{bam_read(..., seqqual_mode = "compact")}
 back to ASCII Phred-quality strings.
 }
+\examples{
+decode_compact_qual(
+  qual = list(as.raw(c(0L, 1L, 2L, 3L)))
+)
+}
+\seealso{
+\code{\link[=decode_compact_seq]{decode_compact_seq()}}, \code{\link[=decode_seqqual_compact]{decode_seqqual_compact()}}, \code{\link[=bam_read]{bam_read()}}
+}

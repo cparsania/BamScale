@@ -6,4 +6,5 @@ articles:
   - title: Articles
     navbar: Articles
     contents:
+      - BamScale-intro
       - benchmark-results

@@ -9,7 +9,7 @@ This folder contains a server-first benchmark workflow for BamScale with configu
 - Final `seqqual` run:
   - `inst/benchmarks/run_20260320_162359/`
 - Pkgdown article source:
-  - `vignettes/benchmark-results.qmd`
+  - `vignettes/benchmark-results.Rmd`
 
 ## Benchmark tracks
 
@@ -78,7 +78,7 @@ If no BAM input is provided, the script resolves BAMs from `chipseqDBData::H3K9a
 Pkgdown article source:
 
 ```bash
-/usr/local/bin/quarto render vignettes/benchmark-results.qmd
+/usr/local/bin/Rscript -e "rmarkdown::render('vignettes/benchmark-results.Rmd')"
 ```
 
 ## Main outputs

@@ -8,7 +8,7 @@ bam_count(
   file,
   param = NULL,
   threads = 1L,
-  BPPARAM = NULL,
+  BPPARAM = BiocParallel::bpparam(),
   auto_threads = FALSE,
   include_unmapped = TRUE
 )
@@ -21,7 +21,9 @@ bam_count(
 \item{threads}{Requested number of OpenMP threads. May be capped when
 \code{auto_threads = TRUE}.}
 
-\item{BPPARAM}{Optional \code{BiocParallel} parameter for multi-file operation.}
+\item{BPPARAM}{\code{BiocParallel} parameter for multi-file operation. Defaults
+to \code{BiocParallel::bpparam()}. Set to \code{NULL} to force serial file
+processing.}
 
 \item{auto_threads}{Logical; when \code{TRUE} and \code{BPPARAM} has multiple workers,
 BamScale adaptively avoids oversubscription by preserving higher
@@ -48,8 +50,6 @@ per-file thread count within the detected core budget, then caps per-file
 OpenMP threads only if a single file would still oversubscribe the machine.
 }
 \examples{
-if (requireNamespace("ompBAM", quietly = TRUE)) {
-  bam <- ompBAM::example_BAM("Unsorted")
-  bam_count(bam, threads = 2)
-}
+bam <- ompBAM::example_BAM("Unsorted")
+bam_count(bam, threads = 2)
 }

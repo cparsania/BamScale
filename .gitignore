@@ -68,3 +68,6 @@ inst/benchmarks/benchmark_presentation_reference_century_gothic.pptx
 inst/benchmarks/benchmark_presentation_reference.pptx
 inst/benchmarks/benchmark_presentation.pptx
 inst/benchmarks/benchmark_presentation.qmd
+inst/benchmarks/manuscript_figs.R
+scripts/citation_to_ris.R
+scripts/manuscript_figs.R

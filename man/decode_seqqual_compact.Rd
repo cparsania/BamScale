@@ -30,3 +30,12 @@ character vectors. The input class is preserved.
 Convenience wrapper for converting a compact \code{bam_read()} result back to
 ordinary sequence and quality strings.
 }
+\examples{
+x <- data.frame(qwidth = 4L)
+x$seq <- I(list(as.raw(c(0x12, 0x48))))
+x$qual <- I(list(as.raw(c(0L, 1L, 2L, 3L))))
+decode_seqqual_compact(x)
+}
+\seealso{
+\code{\link[=decode_compact_seq]{decode_compact_seq()}}, \code{\link[=decode_compact_qual]{decode_compact_qual()}}, \code{\link[=bam_read]{bam_read()}}
+}

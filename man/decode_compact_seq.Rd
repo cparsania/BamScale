@@ -20,3 +20,12 @@ A character vector containing decoded sequence strings.
 Decodes \code{seq} values returned by \code{bam_read(..., seqqual_mode = "compact")}
 back to ordinary character strings.
 }
+\examples{
+decode_compact_seq(
+  seq = list(as.raw(c(0x12, 0x48))),
+  qwidth = 4L
+)
+}
+\seealso{
+\code{\link[=decode_compact_qual]{decode_compact_qual()}}, \code{\link[=decode_seqqual_compact]{decode_seqqual_compact()}}, \code{\link[=bam_read]{bam_read()}}
+}

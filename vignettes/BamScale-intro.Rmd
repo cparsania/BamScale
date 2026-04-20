@@ -1,0 +1,179 @@
+---
+title: "Getting started with BamScale"
+author: "Chirag Parsania"
+output:
+  BiocStyle::html_document:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Getting started with BamScale}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Introduction
+
+`BamScale` provides multithreaded sequential BAM traversal for
+R/Bioconductor workflows. The package is designed for users who already rely on
+`Rsamtools`, `GenomicAlignments`, and `BiocParallel`, but need faster BAM
+parsing without moving to a separate non-Bioconductor workflow model.
+
+The package targets three common classes of BAM access:
+
+- metadata-oriented scans for filtering, fragment summaries, and quality control
+- generation of alignment objects for downstream `GenomicAlignments` workflows
+- sequence and quality extraction, including an optimized compact mode
+
+The motivation for inclusion in Bioconductor is therefore straightforward:
+`BamScale` accelerates a core data-access bottleneck while preserving familiar
+Bioconductor inputs, filtering semantics, and output types.
+
+# Installation
+
+At present, `BamScale` depends on the `ompBAM` engine and is intended for use
+with an OpenMP-capable toolchain.
+
+```r
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+    install.packages("BiocManager")
+}
+
+BiocManager::install("ompBAM")
+BiocManager::install("BamScale")
+```
+
+# Basic usage
+
+```{r load-example-bam}
+library(BamScale)
+
+bam <- ompBAM::example_BAM("Unsorted")
+```
+
+## Metadata-oriented BAM access
+
+The most common BAM-access pattern is extraction of alignment metadata such as
+read name, flag, reference name, position, mapping quality, and CIGAR string.
+
+```{r metadata-access}
+x <- bam_read(
+    file = bam,
+    what = c("qname", "flag", "rname", "pos", "mapq", "cigar"),
+    as = "data.frame",
+    threads = 2
+)
+
+head(x)
+```
+
+## Filtering with `ScanBamParam`
+
+`BamScale` accepts `Rsamtools::ScanBamParam`, allowing existing filtering logic
+to be reused directly.
+
+```{r scanbamparam-filtering}
+param <- Rsamtools::ScanBamParam(
+    what = c("qname", "flag", "mapq"),
+    mapqFilter = 20L,
+    flag = Rsamtools::scanBamFlag(isUnmappedQuery = FALSE)
+)
+
+filtered <- bam_read(
+    file = bam,
+    param = param,
+    as = "data.frame",
+    threads = 2
+)
+
+head(filtered)
+```
+
+## Alignment-object output
+
+When downstream workflows expect `GenomicAlignments` objects, `bam_read()` can
+return those directly.
+
+```{r galignments-output}
+ga <- bam_read(
+    file = bam,
+    what = c("qname", "flag", "rname", "pos", "cigar", "strand"),
+    as = "GAlignments",
+    threads = 2
+)
+
+ga
+```
+
+## Sequence and quality extraction
+
+For `seq` and `qual`, `BamScale` supports both a compatibility-preserving mode
+and an optimized compact mode.
+
+```{r seqqual-compatible}
+seqqual_compatible <- bam_read(
+    file = bam,
+    what = c("qname", "seq", "qual"),
+    as = "data.frame",
+    seqqual_mode = "compatible",
+    threads = 2
+)
+
+head(seqqual_compatible)
+```
+
+Compact mode returns lower-level raw vectors for throughput-oriented workflows.
+These values can be decoded back to ordinary strings explicitly when needed.
+
+```{r seqqual-compact}
+seqqual_compact <- bam_read(
+    file = bam,
+    what = c("qname", "qwidth", "seq", "qual"),
+    as = "data.frame",
+    seqqual_mode = "compact",
+    threads = 2
+)
+
+head(seqqual_compact)
+
+seqqual_decoded <- decode_seqqual_compact(seqqual_compact)
+head(seqqual_decoded)
+```
+
+## Fast count summaries
+
+`bam_count()` provides chromosome-level count summaries using the same BAM
+filtering model.
+
+```{r bam-count-example}
+counts <- bam_count(bam, threads = 2)
+counts
+```
+
+# Relationship to existing Bioconductor tools
+
+`BamScale` is intended to complement, not replace, existing Bioconductor
+packages.
+
+- `Rsamtools` remains the canonical low-level BAM access layer in R and defines
+  the filtering idioms that `BamScale` reuses through `ScanBamParam`.
+- `GenomicAlignments` remains the standard package for alignment-centric
+  downstream workflows, and `BamScale` supports direct generation of compatible
+  alignment objects.
+- `BiocParallel` remains the standard mechanism for file-level parallelism, and
+  `BamScale` adds a second axis of parallelism through per-file OpenMP threads.
+
+The main difference is therefore performance-oriented: `BamScale` accelerates
+the traversal step itself while staying close to existing Bioconductor usage
+patterns.
+
+# Session information
+
+```{r intro-session-info}
+sessionInfo()
+```

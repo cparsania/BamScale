@@ -1,6 +1,4 @@
 test_that("bam_read returns selected fields", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(
     file = bam,
@@ -14,8 +12,6 @@ test_that("bam_read returns selected fields", {
 })
 
 test_that("bam_read supports sequence and quality columns", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(
     file = bam,
@@ -30,8 +26,6 @@ test_that("bam_read supports sequence and quality columns", {
 })
 
 test_that("list-style param filtering works", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(
     file = bam,
@@ -46,8 +40,6 @@ test_that("list-style param filtering works", {
 })
 
 test_that("scanBam mode returns scan-like list structure", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(
     file = bam,
@@ -67,8 +59,6 @@ test_that("scanBam mode returns scan-like list structure", {
 
 
 test_that("scanBam seq/qual uses Biostrings classes when available", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(
     file = bam,
@@ -77,19 +67,12 @@ test_that("scanBam seq/qual uses Biostrings classes when available", {
     threads = 1
   )
 
-  if (requireNamespace("Biostrings", quietly = TRUE)) {
-    expect_s4_class(x[[1]]$seq, "DNAStringSet")
-    expect_s4_class(x[[1]]$qual, "PhredQuality")
-  } else {
-    expect_type(x[[1]]$seq, "character")
-    expect_type(x[[1]]$qual, "character")
-  }
+  expect_s4_class(x[[1]]$seq, "DNAStringSet")
+  expect_s4_class(x[[1]]$qual, "PhredQuality")
 })
 
 
 test_that("scanBam mode batches by which labels and keeps empty ranges", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   seed <- bam_read(
     file = bam,
@@ -126,8 +109,6 @@ test_that("scanBam mode batches by which labels and keeps empty ranges", {
 })
 
 test_that("multi-file input returns named list", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(file = c(a = bam, b = bam), what = c("qname"), threads = 1)
 
@@ -137,8 +118,6 @@ test_that("multi-file input returns named list", {
 })
 
 test_that("bam_count runs and returns expected columns", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
   y <- bam_count(file = bam, threads = 1)
 
@@ -148,9 +127,6 @@ test_that("bam_count runs and returns expected columns", {
 })
 
 test_that("GAlignments output is available when package is installed", {
-  skip_if_not_installed("ompBAM")
-  skip_if_not_installed("GenomicAlignments")
-
   bam <- ompBAM::example_BAM("Unsorted")
   g <- bam_read(
     file = bam,
@@ -163,9 +139,6 @@ test_that("GAlignments output is available when package is installed", {
 })
 
 test_that("GAlignmentPairs output is available when package is installed", {
-  skip_if_not_installed("ompBAM")
-  skip_if_not_installed("GenomicAlignments")
-
   bam <- ompBAM::example_BAM("Unsorted")
   gp <- bam_read(
     file = bam,
@@ -181,15 +154,13 @@ test_that("GAlignmentPairs output is available when package is installed", {
 
 test_that("auto_threads validates logical input", {
   expect_error(
-    BamScale:::.bamscale_resolve_threads(threads = 1L, auto_threads = NA),
+    BamScale:::.bamscale_resolve_parallel_plan(threads = 1L, auto_threads = NA),
     "`auto_threads` must be TRUE or FALSE"
   )
 })
 
 
 test_that("auto_threads preserves per-file threads by reducing active workers first", {
-  skip_if_not_installed("BiocParallel")
-
   bp <- tryCatch(
     BiocParallel::SnowParam(workers = 8L, type = "SOCK", progressbar = FALSE),
     error = function(e) NULL
@@ -213,8 +184,6 @@ test_that("auto_threads preserves per-file threads by reducing active workers fi
 
 
 test_that("auto_threads keeps multiple workers when requested per-file threads are small", {
-  skip_if_not_installed("BiocParallel")
-
   bp <- tryCatch(
     BiocParallel::SnowParam(workers = 8L, type = "SOCK", progressbar = FALSE),
     error = function(e) NULL
@@ -304,8 +273,6 @@ test_that("decode_seqqual_compact preserves non-seqqual columns", {
 })
 
 test_that("compact seqqual round-trips to BamScale compatible output", {
-  skip_if_not_installed("ompBAM")
-
   bam <- ompBAM::example_BAM("Unsorted")
 
   compat <- bam_read(
@@ -338,10 +305,6 @@ test_that("compact seqqual round-trips to BamScale compatible output", {
 })
 
 test_that("compact seqqual decode matches Rsamtools sequence and quality output", {
-  skip_if_not_installed("ompBAM")
-  skip_if_not_installed("Rsamtools")
-  skip_if_not_installed("Biostrings")
-
   bam <- ompBAM::example_BAM("Unsorted")
 
   compact <- bam_read(

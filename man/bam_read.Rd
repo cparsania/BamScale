@@ -12,7 +12,7 @@ bam_read(
   as = c("DataFrame", "data.frame", "GAlignments", "GAlignmentPairs", "scanBam"),
   seqqual_mode = c("compatible", "compact"),
   threads = 1L,
-  BPPARAM = NULL,
+  BPPARAM = BiocParallel::bpparam(),
   auto_threads = FALSE,
   use.names = FALSE,
   with.which_label = FALSE,
@@ -65,8 +65,9 @@ missing quality values. This mode is currently supported for
 \item{threads}{Requested number of OpenMP threads used for
 reading/decompression. May be capped when \code{auto_threads = TRUE}.}
 
-\item{BPPARAM}{Optional \code{BiocParallel} parameter used when \code{file} contains
-more than one BAM. If \code{NULL}, files are processed serially.}
+\item{BPPARAM}{\code{BiocParallel} parameter used when \code{file} contains
+more than one BAM. Defaults to \code{BiocParallel::bpparam()}. Set to \code{NULL}
+to force serial file processing.}
 
 \item{auto_threads}{Logical; when \code{TRUE} and \code{BPPARAM} has multiple workers,
 BamScale adaptively avoids oversubscription by preserving higher
@@ -132,21 +133,20 @@ output back to standard string form when needed.
 without \code{param$which}, it returns one unnamed batch; with \code{param$which},
 it returns one batch per range label (including empty ranges), with
 requested \code{what} fields and \code{tag} values under \verb{$tag}.
-If Biostrings is installed, \code{seq} and \code{qual} are returned as
-\code{DNAStringSet} and \code{PhredQuality} for closer \code{scanBam()} compatibility.
+In this output mode, \code{seq} and \code{qual} are returned as
+\code{Biostrings::DNAStringSet} and \code{Biostrings::PhredQuality} for closer
+\code{scanBam()} compatibility.
 }
 }
 \examples{
-if (requireNamespace("ompBAM", quietly = TRUE)) {
-  bam <- ompBAM::example_BAM("Unsorted")
+bam <- ompBAM::example_BAM("Unsorted")
 
-  # Familiar scanBam-like field selection
-  x <- bam_read(bam, what = c("qname", "flag", "rname", "pos", "cigar"))
+# Familiar scanBam-like field selection
+x <- bam_read(bam, what = c("qname", "flag", "rname", "pos", "cigar"))
 
-  # Include sequence + quality
-  y <- bam_read(bam, what = c("qname", "seq", "qual"), threads = 2)
+# Include sequence + quality
+y <- bam_read(bam, what = c("qname", "seq", "qual"), threads = 2)
 
-  # scanBam-shaped output
-  z <- bam_read(bam, what = c("qname", "flag"), tag = "NM", as = "scanBam")
-}
+# scanBam-shaped output
+z <- bam_read(bam, what = c("qname", "flag"), tag = "NM", as = "scanBam")
 }

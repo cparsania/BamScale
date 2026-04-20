@@ -16,38 +16,37 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
     BiocGenerics,
+    BiocParallel,
+    Biostrings,
+    GenomicAlignments,
+    GenomicRanges,
+    IRanges,
     methods,
-    Rcpp
+    ompBAM,
+    Rcpp,
+    Rsamtools,
+    S4Vectors
 LinkingTo:
     Rcpp,
     ompBAM
 Suggests:
-    BiocGenerics,
-    BiocParallel,
-    Biostrings,
+    BiocStyle,
     chipseqDBData,
     dplyr,
     ExperimentHub,
-    GenomicAlignments,
-    GenomicRanges,
     GenomeInfoDb,
     ggplot2,
-    IRanges,
     knitr,
-    quarto,
     readr,
     rmarkdown,
-    ompBAM,
-    Rsamtools,
     scales,
-    S4Vectors,
     tibble,
     testthat (>= 3.0.0),
     tidyr,
 VignetteBuilder:
-    quarto
+    knitr
 Config/testthat/edition: 3
-SystemRequirements: C++17, OpenMP, quarto
+SystemRequirements: C++17, OpenMP
 NeedsCompilation: yes
 URL: https://cparsania.github.io/BamScale/
 BugReports: https://github.com/cparsania/BamScale/issues

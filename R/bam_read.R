@@ -21,6 +21,10 @@
     qual = bitwShiftL(1L, 12L)
 )
 
+.bamscale_example_bam <- function(which = "Unsorted") {
+    ompBAM::example_BAM(which)
+}
+
 
 #' Fast BAM reading with Bioconductor-compatible arguments
 #'
@@ -61,8 +65,9 @@
 #'   `as = "data.frame"` or `as = "DataFrame"`.
 #' @param threads Requested number of OpenMP threads used for
 #'   reading/decompression. May be capped when `auto_threads = TRUE`.
-#' @param BPPARAM Optional `BiocParallel` parameter used when `file` contains
-#'   more than one BAM. If `NULL`, files are processed serially.
+#' @param BPPARAM `BiocParallel` parameter used when `file` contains
+#'   more than one BAM. Defaults to `BiocParallel::bpparam()`. Set to `NULL`
+#'   to force serial file processing.
 #' @param auto_threads Logical; when `TRUE` and `BPPARAM` has multiple workers,
 #'   BamScale adaptively avoids oversubscription by preserving higher
 #'   per-file OpenMP thread counts when possible and reducing the number of
@@ -115,22 +120,21 @@
 #'   without `param$which`, it returns one unnamed batch; with `param$which`,
 #'   it returns one batch per range label (including empty ranges), with
 #'   requested `what` fields and `tag` values under `$tag`.
-#'   If Biostrings is installed, `seq` and `qual` are returned as
-#'   `DNAStringSet` and `PhredQuality` for closer `scanBam()` compatibility.
+#'   In this output mode, `seq` and `qual` are returned as
+#'   `Biostrings::DNAStringSet` and `Biostrings::PhredQuality` for closer
+#'   `scanBam()` compatibility.
 #'
 #' @examples
-#' if (requireNamespace("ompBAM", quietly = TRUE)) {
-#'   bam <- ompBAM::example_BAM("Unsorted")
+#' bam <- ompBAM::example_BAM("Unsorted")
 #'
-#'   # Familiar scanBam-like field selection
-#'   x <- bam_read(bam, what = c("qname", "flag", "rname", "pos", "cigar"))
+#' # Familiar scanBam-like field selection
+#' x <- bam_read(bam, what = c("qname", "flag", "rname", "pos", "cigar"))
 #'
-#'   # Include sequence + quality
-#'   y <- bam_read(bam, what = c("qname", "seq", "qual"), threads = 2)
+#' # Include sequence + quality
+#' y <- bam_read(bam, what = c("qname", "seq", "qual"), threads = 2)
 #'
-#'   # scanBam-shaped output
-#'   z <- bam_read(bam, what = c("qname", "flag"), tag = "NM", as = "scanBam")
-#' }
+#' # scanBam-shaped output
+#' z <- bam_read(bam, what = c("qname", "flag"), tag = "NM", as = "scanBam")
 #' @export
 bam_read <- function(
     file,
@@ -140,7 +144,7 @@ bam_read <- function(
     as = c("DataFrame", "data.frame", "GAlignments", "GAlignmentPairs", "scanBam"),
     seqqual_mode = c("compatible", "compact"),
     threads = 1L,
-    BPPARAM = NULL,
+    BPPARAM = BiocParallel::bpparam(),
     auto_threads = FALSE,
     use.names = FALSE,
     with.which_label = FALSE,
@@ -281,7 +285,9 @@ bam_read <- function(
 #' @param param Optional `Rsamtools::ScanBamParam` (or compatible list).
 #' @param threads Requested number of OpenMP threads. May be capped when
 #'   `auto_threads = TRUE`.
-#' @param BPPARAM Optional `BiocParallel` parameter for multi-file operation.
+#' @param BPPARAM `BiocParallel` parameter for multi-file operation. Defaults
+#'   to `BiocParallel::bpparam()`. Set to `NULL` to force serial file
+#'   processing.
 #' @param auto_threads Logical; when `TRUE` and `BPPARAM` has multiple workers,
 #'   BamScale adaptively avoids oversubscription by preserving higher
 #'   per-file OpenMP thread counts when possible and reducing the number of
@@ -302,16 +308,14 @@ bam_read <- function(
 #' OpenMP threads only if a single file would still oversubscribe the machine.
 #'
 #' @examples
-#' if (requireNamespace("ompBAM", quietly = TRUE)) {
-#'   bam <- ompBAM::example_BAM("Unsorted")
-#'   bam_count(bam, threads = 2)
-#' }
+#' bam <- ompBAM::example_BAM("Unsorted")
+#' bam_count(bam, threads = 2)
 #' @export
 bam_count <- function(
     file,
     param = NULL,
     threads = 1L,
-    BPPARAM = NULL,
+    BPPARAM = BiocParallel::bpparam(),
     auto_threads = FALSE,
     include_unmapped = TRUE
 ) {
@@ -359,6 +363,14 @@ bam_count <- function(
 #'   sequence bytes use BAM's 4-bit packed encoding (two bases per byte).
 #'
 #' @return A character vector containing decoded sequence strings.
+#'
+#' @seealso [decode_compact_qual()], [decode_seqqual_compact()], [bam_read()]
+#'
+#' @examples
+#' decode_compact_seq(
+#'   seq = list(as.raw(c(0x12, 0x48))),
+#'   qwidth = 4L
+#' )
 #' @export
 decode_compact_seq <- function(seq, qwidth) {
     if (!is.list(seq)) {
@@ -382,6 +394,13 @@ decode_compact_seq <- function(seq, qwidth) {
 #' @return A character vector containing decoded quality strings. Entries with
 #'   all-missing quality bytes are returned as `"*"`, matching BamScale's
 #'   compatibility mode.
+#'
+#' @seealso [decode_compact_seq()], [decode_seqqual_compact()], [bam_read()]
+#'
+#' @examples
+#' decode_compact_qual(
+#'   qual = list(as.raw(c(0L, 1L, 2L, 3L)))
+#' )
 #' @export
 decode_compact_qual <- function(qual) {
     if (!is.list(qual)) {
@@ -404,6 +423,14 @@ decode_compact_qual <- function(qual) {
 #'
 #' @return `x` with compact `seq` and/or `qual` columns replaced by decoded
 #'   character vectors. The input class is preserved.
+#'
+#' @seealso [decode_compact_seq()], [decode_compact_qual()], [bam_read()]
+#'
+#' @examples
+#' x <- data.frame(qwidth = 4L)
+#' x$seq <- I(list(as.raw(c(0x12, 0x48))))
+#' x$qual <- I(list(as.raw(c(0L, 1L, 2L, 3L))))
+#' decode_seqqual_compact(x)
 #' @export
 decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth_col = "qwidth") {
     if (is.null(names(x))) {
@@ -528,10 +555,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
         return(list(threads = threads, bp_workers = workers_eff))
     }
 
-    if (!requireNamespace("BiocParallel", quietly = TRUE)) {
-        stop("`auto_threads = TRUE` with `BPPARAM` requires BiocParallel", call. = FALSE)
-    }
-
     available_cores <- .bamscale_detect_cores()
     threads_target <- max(1L, min(threads, available_cores))
     workers_target <- max(1L, min(workers_eff, floor(available_cores / threads_target)))
@@ -541,15 +564,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
         threads = as.integer(threads_effective),
         bp_workers = as.integer(workers_target)
     )
-}
-
-.bamscale_resolve_threads <- function(threads, BPPARAM = NULL, auto_threads = FALSE, n_files = 1L) {
-    .bamscale_resolve_parallel_plan(
-        threads = threads,
-        BPPARAM = BPPARAM,
-        auto_threads = auto_threads,
-        n_files = n_files
-    )$threads
 }
 
 
@@ -569,10 +583,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
 
 .bamscale_apply_files <- function(files, FUN, BPPARAM = NULL, bp_workers = NULL) {
     if (!is.null(BPPARAM)) {
-        if (!requireNamespace("BiocParallel", quietly = TRUE)) {
-            stop("`BPPARAM` was provided but BiocParallel is not installed", call. = FALSE)
-        }
-
         workers_target <- suppressWarnings(as.integer(bp_workers))
         if (length(workers_target) != 1L || is.na(workers_target) || workers_target < 1L) {
             workers_target <- .bamscale_bpparam_workers(BPPARAM)
@@ -600,38 +610,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
     out
 }
 
-
-.bamscale_bamfile_path <- function(x) {
-    p <- tryCatch(
-        {
-            if (requireNamespace("BiocGenerics", quietly = TRUE)) {
-                BiocGenerics::path(x)
-            } else if ("path" %in% names(x)) {
-                x$path
-            } else {
-                stop("No path accessor available")
-            }
-        },
-        error = function(e) {
-            if ("path" %in% names(x)) {
-                x$path
-            } else {
-                stop(
-                    "Failed to extract BAM path from BamFile: ",
-                    conditionMessage(e),
-                    call. = FALSE
-                )
-            }
-        }
-    )
-
-    p <- as.character(p)
-    if (length(p) != 1L || !nzchar(p)) {
-        stop("Invalid BAM path extracted from BamFile", call. = FALSE)
-    }
-    p
-}
-
 .bamscale_normalize_files <- function(file) {
     if (is.character(file)) {
         if (length(file) < 1L || any(!nzchar(file))) {
@@ -647,22 +625,15 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
         return(file)
     }
 
-    if (!requireNamespace("Rsamtools", quietly = TRUE)) {
-        stop(
-            "Non-character BAM inputs require Rsamtools (BamFile/BamFileList)",
-            call. = FALSE
-        )
-    }
-
     if (methods::is(file, "BamFile")) {
-        p <- .bamscale_bamfile_path(file)
+        p <- as.character(BiocGenerics::path(file))
         names(p) <- if (!is.null(names(file)) && nzchar(names(file)[1L])) names(file)[1L] else basename(p)
         if (!file.exists(p)) stop("BAM file not found: ", p, call. = FALSE)
         return(p)
     }
 
     if (methods::is(file, "BamFileList")) {
-        p <- vapply(file, .bamscale_bamfile_path, FUN.VALUE = character(1))
+        p <- vapply(file, function(x) as.character(BiocGenerics::path(x)), FUN.VALUE = character(1))
         nm <- names(file)
         if (is.null(nm) || any(!nzchar(nm))) nm <- basename(p)
         names(p) <- nm
@@ -717,24 +688,20 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
         return(out)
     }
 
-    if (!requireNamespace("Rsamtools", quietly = TRUE)) {
-        stop("`param` as ScanBamParam requires Rsamtools", call. = FALSE)
-    }
-
     if (!methods::is(param, "ScanBamParam")) {
         stop("`param` must be NULL, ScanBamParam, or a compatible list", call. = FALSE)
     }
 
-    out$min_mapq <- as.integer(methods::slot(param, "mapqFilter"))
-    out$what <- as.character(methods::slot(param, "what"))
-    out$tag <- as.character(methods::slot(param, "tag"))
+    out$min_mapq <- as.integer(Rsamtools::bamMapqFilter(param))
+    out$what <- as.character(Rsamtools::bamWhat(param))
+    out$tag <- as.character(Rsamtools::bamTag(param))
 
-    flag <- methods::slot(param, "flag")
+    flag <- Rsamtools::bamFlag(param)
     masks <- .bamscale_scan_flag_masks(flag)
     out$flag_set <- masks$set
     out$flag_unset <- masks$unset
 
-    out$which <- .bamscale_which_to_df(methods::slot(param, "which"))
+    out$which <- .bamscale_which_to_df(Rsamtools::bamWhich(param))
     out
 }
 
@@ -759,8 +726,8 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
     set_mask <- 0L
     unset_mask <- 0L
 
-    for (nm in intersect(methods::slotNames(flag_obj), names(bit_map))) {
-        val <- methods::slot(flag_obj, nm)
+    for (nm in intersect(names(flag_obj), names(bit_map))) {
+        val <- flag_obj[[nm]]
         if (length(val) != 1L || is.na(val)) next
 
         if (isTRUE(val)) {
@@ -866,12 +833,8 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
 }
 
 .bamscale_subset_metadata <- function(df, idx, cols) {
-    if (!requireNamespace("S4Vectors", quietly = TRUE)) {
-        stop("`as = 'GAlignments'` requires S4Vectors", call. = FALSE)
-    }
-
     if (length(cols) == 0L) {
-        return(getFromNamespace("make_zero_col_DFrame", "S4Vectors")(length(idx)))
+        return(S4Vectors::make_zero_col_DFrame(length(idx)))
     }
 
     vals <- lapply(cols, function(nm) df[[nm]][idx])
@@ -898,10 +861,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
     }
 
     if (identical(as, "DataFrame")) {
-        if (!requireNamespace("S4Vectors", quietly = TRUE)) {
-            warning("S4Vectors not installed; returning data.frame")
-            return(selected_df)
-        }
         return(S4Vectors::DataFrame(selected_df, check.names = FALSE))
     }
 
@@ -1006,10 +965,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
 
 
 .bamscale_scanbam_biostrings <- function(rec) {
-    if (!requireNamespace("Biostrings", quietly = TRUE)) {
-        return(rec)
-    }
-
     if ("seq" %in% names(rec)) {
         seq_vals <- as.character(rec$seq)
         seq_vals[is.na(seq_vals)] <- "N"
@@ -1039,10 +994,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
 }
 
 .bamscale_as_galignments <- function(selected_df, raw_df, use.names = FALSE, selected_names = names(selected_df), row_index = NULL) {
-    if (!requireNamespace("GenomicAlignments", quietly = TRUE)) {
-        stop("`as = 'GAlignments'` requires GenomicAlignments", call. = FALSE)
-    }
-
     required <- c("rname", "pos", "cigar", "strand")
     if (!all(required %in% selected_names)) {
         stop(
@@ -1098,10 +1049,6 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
 }
 
 .bamscale_as_galignment_pairs <- function(selected_df, raw_df, use.names = FALSE, selected_names = names(selected_df)) {
-    if (!requireNamespace("GenomicAlignments", quietly = TRUE)) {
-        stop("`as = 'GAlignmentPairs'` requires GenomicAlignments", call. = FALSE)
-    }
-
     required <- c("qname", "flag", "rname", "pos", "cigar", "strand")
     if (!all(required %in% selected_names)) {
         stop(
