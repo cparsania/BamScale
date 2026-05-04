@@ -6,6 +6,8 @@
 \alias{BamScale-package}
 \title{BamScale: Bioconductor-Friendly Multithreaded BAM Processing}
 \description{
+\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
+
 Multithreaded sequential BAM processing built on top of the ompBAM C++ engine. BamScale provides user-friendly BAM read and scan interfaces designed for compatibility with existing Bioconductor workflows.
 }
 \seealso{

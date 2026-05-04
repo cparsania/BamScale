@@ -1,6 +1,7 @@
-# BamScale
+# BamScale <a href="https://cparsania.github.io/BamScale"><img src="man/figures/logo.png" align="right" height="240" alt="BamScale website" /></a>
 
-<img src="man/figures/BamScale-logo.png" alt="BamScale logo" width="170" style="float: right; margin: 0 0 1rem 1rem;" />
+> Bioconductor-Friendly Multithreaded BAM Processing
+
 
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
 [![pkgdown](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml)
