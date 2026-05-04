@@ -1,6 +1,6 @@
 # BamScale
 
-![BamScale logo](reference/figures/BamScale-logo.png)
+> Bioconductor-Friendly Multithreaded BAM Processing
 
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
 [![pkgdown](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml)
@@ -102,6 +102,7 @@ alignment-object construction.
 ### Current install route (pre-Bioconductor release)
 
 ``` r
+
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
@@ -116,12 +117,14 @@ remotes::install_github("cparsania/BamScale")
 ### After Bioconductor acceptance
 
 ``` r
+
 BiocManager::install("BamScale")
 ```
 
 ## Quick Start
 
 ``` r
+
 library(BamScale)
 
 bam <- ompBAM::example_BAM("Unsorted")
@@ -176,6 +179,7 @@ downstream code expects ordinary sequence or quality strings, use
 explicitly:
 
 ``` r
+
 sq_compact_decoded <- decode_seqqual_compact(sq_compact)
 ```
 
@@ -243,6 +247,7 @@ When posting performance reports, include:
 ## Citation
 
 ``` r
+
 citation("BamScale")
 ```
 

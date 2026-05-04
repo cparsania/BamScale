@@ -27,17 +27,18 @@ At present, `BamScale` depends on the `ompBAM` engine and is intended
 for use with an OpenMP-capable toolchain.
 
 ``` r
+
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
     install.packages("BiocManager")
 }
 
-BiocManager::install("ompBAM")
 BiocManager::install("BamScale")
 ```
 
 ## Basic usage
 
 ``` r
+
 library(BamScale)
 
 bam <- ompBAM::example_BAM("Unsorted")
@@ -50,6 +51,7 @@ such as read name, flag, reference name, position, mapping quality, and
 CIGAR string.
 
 ``` r
+
 x <- bam_read(
     file = bam,
     what = c("qname", "flag", "rname", "pos", "mapq", "cigar"),
@@ -81,6 +83,7 @@ head(x)
 allowing existing filtering logic to be reused directly.
 
 ``` r
+
 param <- Rsamtools::ScanBamParam(
     what = c("qname", "flag", "mapq"),
     mapqFilter = 20L,
@@ -111,6 +114,7 @@ When downstream workflows expect `GenomicAlignments` objects,
 can return those directly.
 
 ``` r
+
 ga <- bam_read(
     file = bam,
     what = c("qname", "flag", "rname", "pos", "cigar", "strand"),
@@ -156,6 +160,7 @@ For `seq` and `qual`, `BamScale` supports both a
 compatibility-preserving mode and an optimized compact mode.
 
 ``` r
+
 seqqual_compatible <- bam_read(
     file = bam,
     what = c("qname", "seq", "qual"),
@@ -193,6 +198,7 @@ workflows. These values can be decoded back to ordinary strings
 explicitly when needed.
 
 ``` r
+
 seqqual_compact <- bam_read(
     file = bam,
     what = c("qname", "qwidth", "seq", "qual"),
@@ -242,6 +248,7 @@ provides chromosome-level count summaries using the same BAM filtering
 model.
 
 ``` r
+
 counts <- bam_count(bam, threads = 2)
 counts
 #>    seqname seqlength count
@@ -295,8 +302,9 @@ Bioconductor usage patterns.
 ## Session information
 
 ``` r
+
 sessionInfo()
-#> R version 4.5.3 (2026-03-11)
+#> R version 4.6.0 (2026-04-24)
 #> Platform: x86_64-pc-linux-gnu
 #> Running under: Ubuntu 24.04.4 LTS
 #> 
@@ -317,36 +325,36 @@ sessionInfo()
 #> [1] stats     graphics  grDevices utils     datasets  methods   base     
 #> 
 #> other attached packages:
-#> [1] BamScale_0.99.8  BiocStyle_2.38.0
+#> [1] BamScale_0.99.9  BiocStyle_2.40.0
 #> 
 #> loaded via a namespace (and not attached):
 #>  [1] sass_0.4.10                 generics_0.1.4             
-#>  [3] SparseArray_1.10.10         bitops_1.0-9               
+#>  [3] SparseArray_1.12.2          bitops_1.0-9               
 #>  [5] lattice_0.22-9              digest_0.6.39              
-#>  [7] evaluate_1.0.5              grid_4.5.3                 
+#>  [7] evaluate_1.0.5              grid_4.6.0                 
 #>  [9] bookdown_0.46               fastmap_1.2.0              
-#> [11] jsonlite_2.0.0              Matrix_1.7-4               
-#> [13] cigarillo_1.0.0             BiocManager_1.30.27        
-#> [15] Biostrings_2.78.0           codetools_0.2-20           
+#> [11] jsonlite_2.0.0              Matrix_1.7-5               
+#> [13] cigarillo_1.2.0             BiocManager_1.30.27        
+#> [15] Biostrings_2.80.0           codetools_0.2-20           
 #> [17] textshaping_1.0.5           jquerylib_0.1.4            
 #> [19] abind_1.4-8                 cli_3.6.6                  
 #> [21] rlang_1.2.0                 crayon_1.5.3               
-#> [23] XVector_0.50.0              ompBAM_1.14.0              
-#> [25] Biobase_2.70.0              cachem_1.1.0               
-#> [27] DelayedArray_0.36.1         yaml_2.3.12                
-#> [29] S4Arrays_1.10.1             tools_4.5.3                
-#> [31] parallel_4.5.3              BiocParallel_1.44.0        
-#> [33] Rsamtools_2.26.0            SummarizedExperiment_1.40.0
-#> [35] BiocGenerics_0.56.0         R6_2.6.1                   
-#> [37] matrixStats_1.5.0           stats4_4.5.3               
-#> [39] lifecycle_1.0.5             Seqinfo_1.0.0              
-#> [41] S4Vectors_0.48.1            fs_2.1.0                   
-#> [43] IRanges_2.44.0              ragg_1.5.2                 
+#> [23] XVector_0.52.0              ompBAM_1.16.0              
+#> [25] Biobase_2.72.0              cachem_1.1.0               
+#> [27] DelayedArray_0.38.1         yaml_2.3.12                
+#> [29] S4Arrays_1.12.0             tools_4.6.0                
+#> [31] parallel_4.6.0              BiocParallel_1.46.0        
+#> [33] Rsamtools_2.28.0            SummarizedExperiment_1.42.0
+#> [35] BiocGenerics_0.58.0         R6_2.6.1                   
+#> [37] matrixStats_1.5.0           stats4_4.6.0               
+#> [39] lifecycle_1.0.5             Seqinfo_1.2.0              
+#> [41] S4Vectors_0.50.0            fs_2.1.0                   
+#> [43] IRanges_2.46.0              ragg_1.5.2                 
 #> [45] desc_1.4.3                  pkgdown_2.2.0              
-#> [47] bslib_0.10.0                Rcpp_1.1.1-1               
+#> [47] bslib_0.10.0                Rcpp_1.1.1-1.1             
 #> [49] systemfonts_1.3.2           xfun_0.57                  
-#> [51] GenomicRanges_1.62.1        GenomicAlignments_1.46.0   
-#> [53] MatrixGenerics_1.22.0       knitr_1.51                 
+#> [51] GenomicRanges_1.64.0        GenomicAlignments_1.48.0   
+#> [53] MatrixGenerics_1.24.0       knitr_1.51                 
 #> [55] htmltools_0.5.9             rmarkdown_2.31             
-#> [57] compiler_4.5.3
+#> [57] compiler_4.6.0
 ```
