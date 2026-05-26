@@ -4,13 +4,12 @@
 
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
 [![pkgdown](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml)
-[![Bioconductor](https://img.shields.io/badge/Bioconductor-submission_in_progress-orange)](https://bioconductor.org/)
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://cparsania.github.io/BamScale/LICENSE)
 [![Bioconductor
 Downloads](https://bioconductor.org/shields/downloads/release/BamScale.svg)](https://bioconductor.org/packages/stats/bioc/BamScale/)
 [![Bioconductor
-Time](https://bioconductor.org/shields/years-in-bioc/BamScale.svg)](https://bioconductor.org/packages/release/bioc/html/BamScale.html)
+Time](https://bioconductor.org/shields/years-in-bioc/BamScale.svg)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
 
 BamScale is a multithreaded BAM processing package for R built on top of
 the `ompBAM` C++ engine. It is designed for Bioconductor users who need

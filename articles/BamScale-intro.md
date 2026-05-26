@@ -335,7 +335,7 @@ sessionInfo()
 #>  [9] bookdown_0.46               fastmap_1.2.0              
 #> [11] jsonlite_2.0.0              Matrix_1.7-5               
 #> [13] cigarillo_1.2.0             BiocManager_1.30.27        
-#> [15] Biostrings_2.80.0           codetools_0.2-20           
+#> [15] Biostrings_2.80.1           codetools_0.2-20           
 #> [17] textshaping_1.0.5           jquerylib_0.1.4            
 #> [19] abind_1.4-8                 cli_3.6.6                  
 #> [21] rlang_1.2.0                 crayon_1.5.3               
@@ -345,13 +345,13 @@ sessionInfo()
 #> [29] S4Arrays_1.12.0             tools_4.6.0                
 #> [31] parallel_4.6.0              BiocParallel_1.46.0        
 #> [33] Rsamtools_2.28.0            SummarizedExperiment_1.42.0
-#> [35] BiocGenerics_0.58.0         R6_2.6.1                   
+#> [35] BiocGenerics_0.58.1         R6_2.6.1                   
 #> [37] matrixStats_1.5.0           stats4_4.6.0               
 #> [39] lifecycle_1.0.5             Seqinfo_1.2.0              
-#> [41] S4Vectors_0.50.0            fs_2.1.0                   
+#> [41] S4Vectors_0.50.1            fs_2.1.0                   
 #> [43] IRanges_2.46.0              ragg_1.5.2                 
 #> [45] desc_1.4.3                  pkgdown_2.2.0              
-#> [47] bslib_0.10.0                Rcpp_1.1.1-1.1             
+#> [47] bslib_0.11.0                Rcpp_1.1.1-1.1             
 #> [49] systemfonts_1.3.2           xfun_0.57                  
 #> [51] GenomicRanges_1.64.0        GenomicAlignments_1.48.0   
 #> [53] MatrixGenerics_1.24.0       knitr_1.51                 

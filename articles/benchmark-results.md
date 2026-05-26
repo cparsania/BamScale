@@ -243,10 +243,10 @@ In practical terms, these results support the following guidance:
     ## [13] fastmap_1.2.0       R6_2.6.1            labeling_0.4.3     
     ## [16] generics_0.1.4      knitr_1.51          tibble_3.3.1       
     ## [19] bookdown_0.46       desc_1.4.3          RColorBrewer_1.1-3 
-    ## [22] bslib_0.10.0        pillar_1.11.1       tzdb_0.5.0         
+    ## [22] bslib_0.11.0        pillar_1.11.1       tzdb_0.5.0         
     ## [25] rlang_1.2.0         cachem_1.1.0        xfun_0.57          
     ## [28] S7_0.2.2            fs_2.1.0            sass_0.4.10        
-    ## [31] bit64_4.8.0         cli_3.6.6           withr_3.0.2        
+    ## [31] bit64_4.8.2         cli_3.6.6           withr_3.0.2        
     ## [34] pkgdown_2.2.0       magrittr_2.0.5      digest_0.6.39      
     ## [37] grid_4.6.0          vroom_1.7.1         hms_1.1.4          
     ## [40] lifecycle_1.0.5     vctrs_0.7.3         evaluate_1.0.5     
