@@ -200,7 +200,11 @@ test_that("auto_threads keeps multiple workers when requested per-file threads a
     n_files = 8L
   )
 
-  expected_workers <- min(8L, max(1L, floor(BamScale:::.bamscale_detect_cores() / 2L)))
+  workers_eff <- min(BamScale:::.bamscale_bpparam_workers(bp), 8L)
+  expected_workers <- min(
+    workers_eff,
+    max(1L, floor(BamScale:::.bamscale_detect_cores() / 2L))
+  )
   expect_equal(plan$threads, 2L)
   expect_equal(plan$bp_workers, expected_workers)
   expect_lte(plan$threads * plan$bp_workers, max(1L, BamScale:::.bamscale_detect_cores()))
