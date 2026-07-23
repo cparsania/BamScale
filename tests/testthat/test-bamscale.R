@@ -11,6 +11,72 @@ test_that("bam_read returns selected fields", {
   expect_true(nrow(x) > 0)
 })
 
+test_that("rname, mrnm and strand are scanBam-compatible factors", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  x <- bam_read(
+    file = bam,
+    what = c("rname", "mrnm", "strand"),
+    as = "data.frame",
+    threads = 1
+  )
+
+  expect_s3_class(x$rname, "factor")
+  expect_s3_class(x$mrnm, "factor")
+  expect_s3_class(x$strand, "factor")
+  expect_identical(levels(x$strand), c("+", "-", "*"))
+
+  # Levels and integer codes match Rsamtools::scanBam exactly.
+  rs <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = c("rname", "mrnm", "strand"))
+  )[[1]]
+  expect_identical(levels(x$rname), levels(rs$rname))
+  expect_identical(as.integer(x$rname), as.integer(rs$rname))
+  expect_identical(as.integer(x$mrnm), as.integer(rs$mrnm))
+  expect_identical(as.character(x$strand), as.character(rs$strand))
+})
+
+test_that("numeric tags are returned with native scanBam-compatible types", {
+  # Build a small BAM carrying integer (i), float (f) and string (Z) tags,
+  # with some records omitting a tag so absent values decode to NA.
+  tmp <- tempfile(fileext = ".sam")
+  n <- 1500L
+  hdr <- c("@HD\tVN:1.6\tSO:coordinate", "@SQ\tSN:chr1\tLN:100000")
+  recs <- vapply(seq_len(n), function(i) {
+    core <- c(sprintf("r%05d", i), "0", "chr1", as.character(10L + i), "60",
+              "10M", "*", "0", "0", "ACGTACGTAC", "IIIIIIIIII")
+    opt <- if (i %% 3L == 0L) {
+      c(sprintf("AS:i:%d", 100L - (i %% 40L)), sprintf("RG:Z:g%d", i %% 3L))
+    } else {
+      c(sprintf("NM:i:%d", i %% 5L), sprintf("AS:i:%d", 100L - (i %% 40L)),
+        sprintf("XF:f:%.3f", (i %% 5L) + 0.25), sprintf("RG:Z:g%d", i %% 3L))
+    }
+    paste(c(core, opt), collapse = "\t")
+  }, character(1))
+  writeLines(c(hdr, recs), tmp)
+  bam <- Rsamtools::asBam(tmp, tempfile(), overwrite = TRUE, indexDestination = FALSE)
+
+  tags <- c("NM", "AS", "XF", "RG")
+  x <- bam_read(bam, what = "qname", tag = tags, as = "data.frame", threads = 2)
+  rs <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = "qname", tag = tags)
+  )[[1]]$tag
+
+  expect_type(x$NM, "integer")
+  expect_type(x$AS, "integer")
+  expect_type(x$XF, "double")
+  expect_type(x$RG, "character")
+
+  expect_identical(x$NM, rs$NM)
+  expect_identical(x$AS, rs$AS)
+  expect_equal(x$XF, rs$XF)
+  expect_identical(x$RG, rs$RG)
+
+  # Absent NM values decode to NA in the same positions as scanBam.
+  expect_identical(is.na(x$NM), is.na(rs$NM))
+})
+
 test_that("bam_read supports sequence and quality columns", {
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(

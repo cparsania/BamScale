@@ -282,58 +282,250 @@ CharacterVector packed_strings_to_character(const PackedStringColumn& packed) {
   return CharacterVector(out);
 }
 
-CharacterVector refs_from_ids(
+// ---------------------------------------------------------------------------
+// Typed tag accumulation.
+//
+// Rsamtools::scanBam returns numeric SAM tags with their native R type (e.g.
+// NM:i as an integer vector, a float tag as a numeric vector), reserving
+// character output for A/Z/H/B tags. BamScale mirrors that here: each tag column
+// is accumulated as the widest type it needs, so a homogeneous numeric tag never
+// pays for per-value string formatting or per-value CHARSXP allocation. Columns
+// only fall back to character when a genuinely non-numeric value appears.
+// ---------------------------------------------------------------------------
+
+enum TagKind : uint8_t {
+  TAG_EMPTY = 0,  // no concrete value observed yet (only absent/NA)
+  TAG_INT   = 1,  // integer-valued numeric tag
+  TAG_DBL   = 2,  // real-valued numeric tag (float seen, or int out of R range)
+  TAG_STR   = 3   // character tag (A/Z/H/B), or numeric promoted after a string
+};
+
+// One probed value from a single read.
+struct TagValue {
+  uint8_t kind;       // 0 = absent/NA, 1 = numeric, 2 = string
+  double num;         // valid when kind == 1
+  bool is_integer;    // numeric came from an integer BAM type
+  bool int_safe;      // numeric fits in an R integer
+  std::string str;    // valid when kind == 2
+};
+
+inline std::string format_tag_num(const double v, const bool as_integer) {
+  if (as_integer) {
+    return std::to_string(static_cast<long long>(v));
+  }
+  std::ostringstream oss;
+  oss << static_cast<float>(v);
+  return oss.str();
+}
+
+TagValue probe_tag(pbam1_t& read, const std::string& tag) {
+  TagValue tv;
+  tv.kind = 0;
+  tv.num = NA_REAL;
+  tv.is_integer = true;
+  tv.int_safe = true;
+
+  const char type = read.Tag_Type(tag);
+  switch (type) {
+    case 'c': tv.kind = 1; tv.num = static_cast<double>(static_cast<int>(read.tagVal_c(tag))); break;
+    case 'C': tv.kind = 1; tv.num = static_cast<double>(static_cast<unsigned int>(read.tagVal_C(tag))); break;
+    case 's': tv.kind = 1; tv.num = static_cast<double>(static_cast<int>(read.tagVal_s(tag))); break;
+    case 'S': tv.kind = 1; tv.num = static_cast<double>(static_cast<unsigned int>(read.tagVal_S(tag))); break;
+    case 'i': tv.kind = 1; tv.num = static_cast<double>(read.tagVal_i(tag)); break;
+    case 'I': {
+      const uint32_t v = read.tagVal_I(tag);
+      tv.kind = 1;
+      tv.num = static_cast<double>(v);
+      if (v > 2147483647u) tv.int_safe = false;
+      break;
+    }
+    case 'f':
+      tv.kind = 1;
+      tv.is_integer = false;
+      tv.int_safe = false;
+      tv.num = static_cast<double>(read.tagVal_f(tag));
+      break;
+    case 'A':
+    case 'Z':
+    case 'H':
+    case 'B':
+      tv.kind = 2;
+      tv.str = extract_tag_as_string(read, tag);
+      break;
+    default:
+      tv.kind = 0;  // tag absent / unknown type -> NA
+      break;
+  }
+  return tv;
+}
+
+struct TagColumn {
+  uint8_t kind = TAG_EMPTY;
+  size_t n = 0U;          // records represented (num/str size once kind is known)
+  bool int_safe = true;   // all integer values fit in an R integer
+  std::vector<double> num;
+  PackedStringColumn str;
+
+  void clear() {
+    kind = TAG_EMPTY;
+    n = 0U;
+    int_safe = true;
+    num.clear();
+    str.clear();
+  }
+
+  void reserve(const size_t hint) {
+    if (hint == 0U) return;
+    if (kind == TAG_STR) {
+      str.reserve(hint, 0U);
+    } else {
+      num.reserve(hint);
+    }
+  }
+
+  // Convert already-accumulated entries to string form (numeric -> formatted,
+  // deferred absents -> NA sentinel). Only hit on the rare mixed-type column.
+  void promote_to_str() {
+    if (kind == TAG_STR) return;
+    PackedStringColumn s;
+    s.reserve(n, 0U);
+    if (kind == TAG_EMPTY) {
+      for (size_t i = 0; i < n; ++i) s.append(TAG_NA_SENTINEL);
+    } else {
+      const bool as_integer = (kind == TAG_INT);
+      for (size_t i = 0; i < num.size(); ++i) {
+        if (R_IsNA(num[i])) {
+          s.append(TAG_NA_SENTINEL);
+        } else {
+          s.append(format_tag_num(num[i], as_integer));
+        }
+      }
+    }
+    str = std::move(s);
+    num.clear();
+    num.shrink_to_fit();
+    kind = TAG_STR;
+  }
+
+  // Bring the column up to a numeric kind, materializing deferred absents.
+  void ensure_numeric(const uint8_t target) {
+    if (kind == TAG_EMPTY) {
+      num.assign(n, NA_REAL);
+      kind = target;
+    } else {
+      kind = target;  // INT -> DBL widening; stored values are already double
+    }
+  }
+
+  void append(const TagValue& tv) {
+    if (tv.kind == 1) {           // numeric value
+      if (kind == TAG_STR) {
+        str.append(format_tag_num(tv.num, tv.is_integer));
+      } else {
+        const uint8_t want = tv.is_integer ? TAG_INT : TAG_DBL;
+        if (kind == TAG_EMPTY) {
+          ensure_numeric(want);
+        } else if (want == TAG_DBL && kind == TAG_INT) {
+          kind = TAG_DBL;         // widen INT -> DBL, never narrow
+        }
+        if (!tv.int_safe) int_safe = false;
+        num.push_back(tv.num);
+      }
+    } else if (tv.kind == 2) {    // string value
+      if (kind != TAG_STR) promote_to_str();
+      str.append(tv.str);
+    } else {                      // absent / NA
+      if (kind == TAG_STR) {
+        str.append(TAG_NA_SENTINEL);
+      } else if (kind != TAG_EMPTY) {
+        num.push_back(NA_REAL);
+      }
+      // TAG_EMPTY: defer; materialized when the kind is decided.
+    }
+    ++n;
+  }
+
+  // Concatenate another thread's column onto this one, widening as needed.
+  void merge(TagColumn& other) {
+    const uint8_t target = std::max(kind, other.kind);
+    if (target == TAG_EMPTY) {
+      n += other.n;
+      return;
+    }
+    if (target == TAG_STR) {
+      promote_to_str();
+      other.promote_to_str();
+      str.append_from(other.str);
+    } else {
+      // target is TAG_INT or TAG_DBL
+      if (kind == TAG_EMPTY) ensure_numeric(target); else kind = target;
+      if (other.kind == TAG_EMPTY) other.ensure_numeric(target);
+      if (!other.int_safe) int_safe = false;
+      num.insert(num.end(), other.num.begin(), other.num.end());
+    }
+    n += other.n;
+  }
+
+  RObject finalize() const {
+    if (kind == TAG_STR) {
+      return packed_strings_to_character(str);
+    }
+    if (kind == TAG_INT && int_safe) {
+      IntegerVector v(static_cast<R_xlen_t>(n));
+      for (size_t i = 0; i < n; ++i) {
+        v[static_cast<R_xlen_t>(i)] = R_IsNA(num[i]) ? NA_INTEGER : static_cast<int>(num[i]);
+      }
+      return v;
+    }
+    if (kind == TAG_INT || kind == TAG_DBL) {
+      return NumericVector(num.begin(), num.end());
+    }
+    // TAG_EMPTY: tag never present -> all-NA character column (prior behaviour).
+    CharacterVector v(static_cast<R_xlen_t>(n));
+    for (R_xlen_t i = 0; i < static_cast<R_xlen_t>(n); ++i) v[i] = NA_STRING;
+    return v;
+  }
+};
+
+// Build an R factor directly from BAM reference ids. Levels are the header
+// chromosome names, so the integer ref id (+1) is already the factor code.
+// Unmapped / unset references (id < 0) become <NA>, matching Rsamtools::scanBam
+// (which returns rname/mrnm as factors with NA for absent references).
+IntegerVector factor_from_ids(
     const std::vector<int>& ref_ids,
     const std::vector<std::string>& chr_names
 ) {
   const R_xlen_t n = static_cast<R_xlen_t>(ref_ids.size());
-  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
-
-  std::vector<SEXP> chr_cache(chr_names.size(), R_NilValue);
-  const SEXP star = Rf_mkCharLen("*", 1);
+  const int n_levels = static_cast<int>(chr_names.size());
+  IntegerVector out(n);
 
   for (R_xlen_t i = 0; i < n; ++i) {
     const int ref_id = ref_ids[static_cast<size_t>(i)];
-    if (ref_id >= 0 && static_cast<size_t>(ref_id) < chr_names.size()) {
-      SEXP cached = chr_cache[static_cast<size_t>(ref_id)];
-      if (cached == R_NilValue) {
-        cached = Rf_mkCharLen(chr_names[static_cast<size_t>(ref_id)].c_str(),
-                              static_cast<int>(chr_names[static_cast<size_t>(ref_id)].size()));
-        chr_cache[static_cast<size_t>(ref_id)] = cached;
-      }
-      SET_STRING_ELT(out, i, cached);
-    } else {
-      SET_STRING_ELT(out, i, star);
-    }
+    out[i] = (ref_id >= 0 && ref_id < n_levels) ? (ref_id + 1) : NA_INTEGER;
   }
 
-  UNPROTECT(1);
-  return CharacterVector(out);
+  out.attr("levels") = wrap(chr_names);
+  out.attr("class") = "factor";
+  return out;
 }
 
-CharacterVector strands_from_codes(const std::vector<int>& strand_codes) {
+// Build an R factor from strand codes (0 = "+", 1 = "-", 2 = "*"), matching the
+// strand factor levels used by Rsamtools::scanBam / GenomicAlignments.
+IntegerVector strand_factor_from_codes(const std::vector<int>& strand_codes) {
   const R_xlen_t n = static_cast<R_xlen_t>(strand_codes.size());
-  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
-  const SEXP plus = Rf_mkCharLen("+", 1);
-  const SEXP minus = Rf_mkCharLen("-", 1);
-  const SEXP star = Rf_mkCharLen("*", 1);
+  IntegerVector out(n);
 
   for (R_xlen_t i = 0; i < n; ++i) {
     switch (strand_codes[static_cast<size_t>(i)]) {
-      case 1:
-        SET_STRING_ELT(out, i, minus);
-        break;
-      case 2:
-        SET_STRING_ELT(out, i, star);
-        break;
-      default:
-        SET_STRING_ELT(out, i, plus);
-        break;
+      case 1:  out[i] = 2; break;  // "-"
+      case 2:  out[i] = 3; break;  // "*"
+      default: out[i] = 1; break;  // "+"
     }
   }
 
-  UNPROTECT(1);
-  return CharacterVector(out);
+  out.attr("levels") = CharacterVector::create("+", "-", "*");
+  out.attr("class") = "factor";
+  return out;
 }
 
 struct QueryInterval {
@@ -576,14 +768,14 @@ List read_bam_cpp(
     stop("Failed to read BAM header");
   }
 
-  std::vector<std::string> qname_out;
+  PackedStringColumn qname_out;
   std::vector<int> flag_out;
   std::vector<int> rname_out;
   std::vector<int> pos_out;
   std::vector<int> strand_out;
   std::vector<int> qwidth_out;
   std::vector<int> mapq_out;
-  std::vector<std::string> cigar_out;
+  PackedStringColumn cigar_out;
   std::vector<int> mrnm_out;
   std::vector<int> mpos_out;
   std::vector<int> isize_out;
@@ -592,18 +784,18 @@ List read_bam_cpp(
   std::vector< std::vector<uint8_t> > seq_raw_out;
   std::vector< std::vector<uint8_t> > qual_raw_out;
   std::vector<std::string> which_label_out;
-  std::vector< std::vector<std::string> > tag_out(tag_names.size());
+  std::vector<TagColumn> tag_out(tag_names.size());
   size_t n_records_total = 0U;
 
-  struct ThreadChunk {
-    std::vector<std::string> qname;
+  struct alignas(64) ThreadChunk {
+    PackedStringColumn qname;
     std::vector<int> flag;
     std::vector<int> rname;
     std::vector<int> pos;
     std::vector<int> strand;
     std::vector<int> qwidth;
     std::vector<int> mapq;
-    std::vector<std::string> cigar;
+    PackedStringColumn cigar;
     std::vector<int> mrnm;
     std::vector<int> mpos;
     std::vector<int> isize;
@@ -612,7 +804,7 @@ List read_bam_cpp(
     std::vector< std::vector<uint8_t> > seq_raw;
     std::vector< std::vector<uint8_t> > qual_raw;
     std::vector<std::string> which_label;
-    std::vector< std::vector<std::string> > tag;
+    std::vector<TagColumn> tag;
     size_t n_records = 0U;
   };
 
@@ -624,14 +816,14 @@ List read_bam_cpp(
   const auto reserve_chunk = [&](ThreadChunk& local, const size_t hint) {
     if (hint == 0U) return;
 
-    if (need_qname) local.qname.reserve(hint);
+    if (need_qname) local.qname.reserve(hint, 0U);
     if (need_flag) local.flag.reserve(hint);
     if (need_rname) local.rname.reserve(hint);
     if (need_pos) local.pos.reserve(hint);
     if (need_strand) local.strand.reserve(hint);
     if (need_qwidth) local.qwidth.reserve(hint);
     if (need_mapq) local.mapq.reserve(hint);
-    if (need_cigar) local.cigar.reserve(hint);
+    if (need_cigar) local.cigar.reserve(hint, 0U);
     if (need_mrnm) local.mrnm.reserve(hint);
     if (need_mpos) local.mpos.reserve(hint);
     if (need_isize) local.isize.reserve(hint);
@@ -737,9 +929,9 @@ List read_bam_cpp(
         if (need_qname) {
           const char* qname_ptr = read.read_name();
           const uint8_t qname_len = read.l_read_name();
-          local.qname.emplace_back(
+          local.qname.append(
             qname_ptr,
-            qname_ptr + (qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U)
+            qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U
           );
         }
         if (need_flag) {
@@ -769,7 +961,7 @@ List read_bam_cpp(
         if (need_cigar) {
           cigar_scratch.clear();
           read.cigar(cigar_scratch);
-          local.cigar.push_back(cigar_scratch);
+          local.cigar.append(cigar_scratch);
         }
         if (need_mrnm) {
           const int32_t next_ref_id = read.next_refID();
@@ -823,7 +1015,7 @@ List read_bam_cpp(
         }
 
         for (size_t j = 0; j < tag_names.size(); ++j) {
-          local.tag[j].push_back(extract_tag_as_string(read, tag_names[j]));
+          local.tag[j].append(probe_tag(read, tag_names[j]));
         }
       }
     }
@@ -835,14 +1027,26 @@ List read_bam_cpp(
 
     if (batch_records > 0U) {
       const size_t target = n_records_total + batch_records;
-      if (need_qname) qname_out.reserve(target);
+      if (need_qname) {
+        size_t batch_qname_bytes = 0U;
+        for (unsigned int tid = 0; tid < threads; ++tid) {
+          batch_qname_bytes += chunk_data[tid].qname.bytes_size();
+        }
+        qname_out.reserve(target, qname_out.bytes_size() + batch_qname_bytes);
+      }
       if (need_flag) flag_out.reserve(target);
       if (need_rname) rname_out.reserve(target);
       if (need_pos) pos_out.reserve(target);
       if (need_strand) strand_out.reserve(target);
       if (need_qwidth) qwidth_out.reserve(target);
       if (need_mapq) mapq_out.reserve(target);
-      if (need_cigar) cigar_out.reserve(target);
+      if (need_cigar) {
+        size_t batch_cigar_bytes = 0U;
+        for (unsigned int tid = 0; tid < threads; ++tid) {
+          batch_cigar_bytes += chunk_data[tid].cigar.bytes_size();
+        }
+        cigar_out.reserve(target, cigar_out.bytes_size() + batch_cigar_bytes);
+      }
       if (need_mrnm) mrnm_out.reserve(target);
       if (need_mpos) mpos_out.reserve(target);
       if (need_isize) isize_out.reserve(target);
@@ -879,11 +1083,7 @@ List read_bam_cpp(
       n_records_total += local.n_records;
 
       if (need_qname) {
-        qname_out.insert(
-          qname_out.end(),
-          std::make_move_iterator(local.qname.begin()),
-          std::make_move_iterator(local.qname.end())
-        );
+        qname_out.append_from(local.qname);
       }
       if (need_flag) {
         flag_out.insert(flag_out.end(), local.flag.begin(), local.flag.end());
@@ -912,11 +1112,7 @@ List read_bam_cpp(
         mapq_out.insert(mapq_out.end(), local.mapq.begin(), local.mapq.end());
       }
       if (need_cigar) {
-        cigar_out.insert(
-          cigar_out.end(),
-          std::make_move_iterator(local.cigar.begin()),
-          std::make_move_iterator(local.cigar.end())
-        );
+        cigar_out.append_from(local.cigar);
       }
       if (need_mrnm) {
         mrnm_out.insert(
@@ -962,11 +1158,7 @@ List read_bam_cpp(
       }
 
       for (size_t j = 0; j < tag_names.size(); ++j) {
-        tag_out[j].insert(
-          tag_out[j].end(),
-          std::make_move_iterator(local.tag[j].begin()),
-          std::make_move_iterator(local.tag[j].end())
-        );
+        tag_out[j].merge(local.tag[j]);
       }
     }
   }
@@ -975,15 +1167,15 @@ List read_bam_cpp(
 
   const int n = static_cast<int>(n_records_total);
   List out;
-  if (need_qname) out["qname"] = wrap(qname_out);
+  if (need_qname) out["qname"] = packed_strings_to_character(qname_out);
   if (need_flag) out["flag"] = wrap(flag_out);
-  if (need_rname) out["rname"] = refs_from_ids(rname_out, chr_names);
+  if (need_rname) out["rname"] = factor_from_ids(rname_out, chr_names);
   if (need_pos) out["pos"] = wrap(pos_out);
-  if (need_strand) out["strand"] = strands_from_codes(strand_out);
+  if (need_strand) out["strand"] = strand_factor_from_codes(strand_out);
   if (need_qwidth) out["qwidth"] = wrap(qwidth_out);
   if (need_mapq) out["mapq"] = wrap(mapq_out);
-  if (need_cigar) out["cigar"] = wrap(cigar_out);
-  if (need_mrnm) out["mrnm"] = refs_from_ids(mrnm_out, chr_names);
+  if (need_cigar) out["cigar"] = packed_strings_to_character(cigar_out);
+  if (need_mrnm) out["mrnm"] = factor_from_ids(mrnm_out, chr_names);
   if (need_mpos) out["mpos"] = wrap(mpos_out);
   if (need_isize) out["isize"] = wrap(isize_out);
 
@@ -1006,7 +1198,7 @@ List read_bam_cpp(
   }
 
   for (size_t j = 0; j < tag_names.size(); ++j) {
-    out[tag_names[j]] = wrap(tag_out[j]);
+    out[tag_names[j]] = tag_out[j].finalize();
   }
 
   out.attr("class") = "data.frame";

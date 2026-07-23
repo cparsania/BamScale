@@ -101,12 +101,20 @@
 #'   oversubscribe the machine.
 #'
 #' Compatibility notes:
+#' - `rname`, `mrnm`, and `strand` are returned as `factor` columns, matching
+#'   `Rsamtools::scanBam()`. `rname`/`mrnm` levels are the BAM header reference
+#'   names; unmapped or unset references are `NA` (not `"*"`). `strand` has
+#'   levels `c("+", "-", "*")`.
 #' - Region filtering via `param$which` is supported as a sequential filter
 #'   (not index-jump random access).
 #' - Flag filtering uses `ScanBamFlag` semantics by converting logical flag
 #'   requirements into required-set and required-unset bit masks.
-#' - Tag values are returned as character columns. Scalar tags are scalar
-#'   strings; `B` tags are comma-separated vectors.
+#' - Tag values are returned with their native BAM-derived type, matching
+#'   `scanBam()`: integer-valued tags (`c`, `C`, `s`, `S`, `i`, `I`) become
+#'   integer columns (or double when a value exceeds the R integer range),
+#'   floating-point (`f`) tags become double columns, and `A`/`Z`/`H`/`B` tags
+#'   become character columns. `B` tags are comma-separated character values.
+#'   Absent tag values are `NA`.
 #' - `seqqual_mode = "compact"` is optimized for throughput-oriented
 #'   benchmarking and returns raw list-columns for `seq`/`qual`, not ordinary
 #'   sequence or quality strings. In this representation, `seq` contains
@@ -803,9 +811,14 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
 .bamscale_decode_tag_sentinel <- function(df, tag_names) {
     if (length(tag_names) == 0L) return(df)
     for (tg in intersect(tag_names, names(df))) {
-        values <- as.character(df[[tg]])
-        values[values == .bamscale_tag_na_sentinel] <- NA_character_
-        df[[tg]] <- values
+        # Numeric tags (e.g. NM:i, an f tag) come back from the reader as native
+        # integer/double columns and never carry the NA sentinel; only character
+        # tag columns (A/Z/H/B) need sentinel-to-NA decoding.
+        values <- df[[tg]]
+        if (is.character(values)) {
+            values[values == .bamscale_tag_na_sentinel] <- NA_character_
+            df[[tg]] <- values
+        }
     }
     df
 }
@@ -1004,8 +1017,9 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
         )
     }
 
+    rname_col <- selected_df$rname
     idx <- if (is.null(row_index)) {
-        which(!is.na(selected_df$pos) & selected_df$rname != "*")
+        which(!is.na(selected_df$pos) & !is.na(rname_col))
     } else {
         as.integer(row_index)
     }
@@ -1017,17 +1031,33 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
     selected_names <- intersect(selected_names, names(selected_df))
     extra_names <- setdiff(selected_names, c("rname", "pos", "cigar", "strand"))
     header_seqnames <- attr(raw_df, "seqnames_header")
-    rname <- as.character(selected_df$rname[idx])
+
+    # `rname` arrives from the C++ reader as a factor whose levels are the BAM
+    # header chromosome names; reuse those codes directly instead of rebuilding
+    # the factor from a re-materialised character vector.
+    rname_sub <- rname_col[idx]
     if (!is.null(header_seqnames)) {
         seqlevels <- as.character(header_seqnames)
+    } else if (is.factor(rname_sub)) {
+        seqlevels <- levels(rname_sub)
     } else {
-        seqlevels <- unique(rname)
+        seqlevels <- unique(as.character(rname_sub))
     }
-    seq_rle <- S4Vectors::Rle(factor(rname, levels = seqlevels))
+    if (is.factor(rname_sub) && identical(levels(rname_sub), seqlevels)) {
+        seq_rle <- S4Vectors::Rle(rname_sub)
+    } else {
+        seq_rle <- S4Vectors::Rle(factor(as.character(rname_sub), levels = seqlevels))
+    }
 
-    strand_vals <- as.character(selected_df$strand[idx])
-    strand_vals[is.na(strand_vals) | !nzchar(strand_vals)] <- "*"
-    strand_rle <- S4Vectors::Rle(factor(strand_vals, levels = c("+", "-", "*")))
+    # `strand` is likewise a factor with levels c("+", "-", "*") from the reader.
+    strand_sub <- selected_df$strand[idx]
+    if (is.factor(strand_sub) && identical(levels(strand_sub), c("+", "-", "*"))) {
+        strand_rle <- S4Vectors::Rle(strand_sub)
+    } else {
+        strand_vals <- as.character(strand_sub)
+        strand_vals[is.na(strand_vals) | !nzchar(strand_vals)] <- "*"
+        strand_rle <- S4Vectors::Rle(factor(strand_vals, levels = c("+", "-", "*")))
+    }
 
     ga_args <- list(
         Class = "GAlignments",
@@ -1060,7 +1090,7 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
     }
 
     flag <- as.integer(selected_df$flag)
-    mapped <- !is.na(selected_df$pos) & selected_df$rname != "*"
+    mapped <- !is.na(selected_df$pos) & !is.na(selected_df$rname)
     paired <- bitwAnd(flag, 0x1L) != 0L
     keep <- mapped & paired
 
