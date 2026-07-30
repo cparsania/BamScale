@@ -17,3 +17,10 @@
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
+^inst/benchmarks/bamscale_naturemethods\.qmd$
+^inst/benchmarks/references\.bib$
+^inst/benchmarks/nature\.csl$
+^benchmark_results$
+^Rplots\.pdf$
+^.*\.log$
+^smoke_report\.html$

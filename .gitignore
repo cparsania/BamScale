@@ -59,6 +59,7 @@ src/symbols.rds
 # Vignette intermediate artifacts
 vignettes/benchmarking.rmarkdown
 vignettes/benchmarking_files/
+vignettes/*_files/
 vignettes/.quarto/
 docs
 inst/benchmarks/bamscale_intro_presentation_edits.pptx
@@ -71,3 +72,7 @@ inst/benchmarks/benchmark_presentation.qmd
 inst/benchmarks/manuscript_figs.R
 scripts/citation_to_ris.R
 scripts/manuscript_figs.R
+# Private Nature Methods manuscript (personal draft; not part of the package)
+inst/benchmarks/bamscale_naturemethods.qmd
+inst/benchmarks/references.bib
+inst/benchmarks/nature.csl
