@@ -15,6 +15,16 @@ using namespace Rcpp;
 #include <unordered_map>
 #include <vector>
 
+// Defined in xstringset_build.c: construct Biostrings XStringSet objects
+// (DNAStringSet / PhredQuality) directly from a shared byte buffer via the
+// R_GetCCallable-exported XVector/IRanges constructors.
+extern "C" {
+SEXP bs_new_xrawlist_single(const char* classname, const char* element_type,
+                            SEXP tag, SEXP start, SEXP width);
+SEXP bs_new_xrawlist(const char* classname, const char* element_type,
+                     SEXP tags, SEXP start, SEXP width, SEXP group);
+}
+
 namespace {
 
 static const std::string TAG_NA_SENTINEL = "__BAMSCALE_TAG_NA__";
@@ -34,7 +44,9 @@ unsigned int clamp_threads(const int requested) {
 struct PackedStringColumn;
 
 inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases);
+inline void append_decoded_seq_encoded(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases);
 inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases);
+inline void append_encoded_qual_native(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases);
 
 template <typename T>
 std::string join_numeric_vector(const std::vector<T>& x) {
@@ -228,6 +240,42 @@ inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* pac
   }
 }
 
+// Fill `out` with DNAString *internal* encoding: BAM nt16 codes 1-15 map to
+// themselves and code 0 ('=') maps to 16, exactly matching the byte layout a
+// DNAStringSet's shared pool holds (verified against Rsamtools::scanBam). This
+// skips the ASCII intermediate entirely — the nibble becomes the pool byte.
+inline void append_decoded_seq_encoded(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases) {
+  static const char enc[16] = {
+    16, 1, 2, 3,
+    4, 5, 6, 7,
+    8, 9, 10, 11,
+    12, 13, 14, 15
+  };
+
+  const size_t offset = out.bytes.size();
+  const size_t len = static_cast<size_t>(n_bases);
+  out.offsets.push_back(offset);
+  out.lengths.push_back(len);
+
+  if (len == 0U || packed_seq == NULL) return;
+
+  out.bytes.resize(offset + len);
+  char* dst = out.bytes.data() + offset;
+
+  const uint32_t n_pairs = n_bases >> 1;
+  uint32_t j = 0U;
+  for (uint32_t i = 0; i < n_pairs; ++i) {
+    const uint8_t byte = packed_seq[i];
+    dst[j++] = enc[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
+    dst[j++] = enc[static_cast<uint8_t>(byte & 0x0FU)];
+  }
+
+  if ((n_bases & 1U) != 0U) {
+    const uint8_t byte = packed_seq[n_pairs];
+    dst[j] = enc[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
+  }
+}
+
 inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases) {
   const size_t offset = out.bytes.size();
   const size_t len = static_cast<size_t>(n_bases);
@@ -258,6 +306,26 @@ inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qu
   }
 }
 
+// Fill `out` with PhredQuality bytes exactly as Rsamtools::scanBam does: full
+// read width, each byte (q + 33) & 0xFF. A missing quality string (ompBAM fills
+// it with 0xFF to l_seq) therefore becomes width-many 0x20 (space) bytes, NOT a
+// width-1 "*". This matches scanBam byte-for-byte.
+inline void append_encoded_qual_native(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases) {
+  const size_t offset = out.bytes.size();
+  const size_t len = static_cast<size_t>(n_bases);
+  out.offsets.push_back(offset);
+  out.lengths.push_back(len);
+
+  if (len == 0U || qual_ptr == NULL) return;
+
+  out.bytes.resize(offset + len);
+  char* dst = out.bytes.data() + offset;
+  for (uint32_t i = 0; i < n_bases; ++i) {
+    dst[static_cast<size_t>(i)] =
+        static_cast<char>((static_cast<unsigned int>(qual_ptr[i]) + 33U) & 0xFFU);
+  }
+}
+
 CharacterVector packed_strings_to_character(const PackedStringColumn& packed) {
   const R_xlen_t n = static_cast<R_xlen_t>(packed.size());
   SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
@@ -282,58 +350,343 @@ CharacterVector packed_strings_to_character(const PackedStringColumn& packed) {
   return CharacterVector(out);
 }
 
-CharacterVector refs_from_ids(
+// Split threshold for the shared pool. A DNAStringSet/PhredQuality pool buffer,
+// like R's SharedRaw and the IRanges start/width, is indexed by int, so a single
+// buffer can hold up to INT_MAX bytes. Rsamtools::scanBam uses exactly this
+// limit, so matching it means any result scanBam can produce (< INT_MAX bytes)
+// takes our single-buffer path and is byte-for-byte identical() to scanBam;
+// only a > INT_MAX result (which scanBam cannot return either) splits into
+// multiple buffers. `total < BS_TAG_CAP` keeps every start+1 within int.
+static const size_t BS_TAG_CAP = 2147483647U;  // INT_MAX
+
+// Build a DNAStringSet / PhredQuality from a merged PackedStringColumn, sharing
+// its `bytes` buffer as the XStringSet pool (one memcpy, no per-element CHARSXP).
+// `classname`/`element_type` select the S4 type: ("DNAStringSet","DNAString")
+// or ("PhredQuality","BString"). Single buffer when total < BS_TAG_CAP (the
+// whole benchmark, identical() to scanBam); multi-buffer only above that.
+Rcpp::RObject xstringset_from_packed(const PackedStringColumn& col,
+                                     const char* classname,
+                                     const char* element_type) {
+  const R_xlen_t n = static_cast<R_xlen_t>(col.size());
+  const size_t total = col.bytes.size();
+
+  if (n == 0) {
+    SEXP tag = PROTECT(Rf_allocVector(RAWSXP, 0));
+    SEXP st = PROTECT(Rf_allocVector(INTSXP, 0));
+    SEXP wd = PROTECT(Rf_allocVector(INTSXP, 0));
+    SEXP ans = PROTECT(bs_new_xrawlist_single(classname, element_type, tag, st, wd));
+    Rcpp::RObject result(ans);
+    UNPROTECT(4);
+    return result;
+  }
+
+  SEXP st = PROTECT(Rf_allocVector(INTSXP, n));
+  SEXP wd = PROTECT(Rf_allocVector(INTSXP, n));
+  int* stp = INTEGER(st);
+  int* wdp = INTEGER(wd);
+
+  if (total < BS_TAG_CAP) {
+    // Single shared buffer — identical() to Rsamtools::scanBam.
+    SEXP tag = PROTECT(Rf_allocVector(RAWSXP, static_cast<R_xlen_t>(total)));
+    if (total > 0U) std::memcpy(RAW(tag), col.bytes.data(), total);  // the only copy
+    for (R_xlen_t i = 0; i < n; ++i) {
+      const size_t idx = static_cast<size_t>(i);
+      stp[i] = static_cast<int>(col.offsets[idx]) + 1;  // 1-based within the tag
+      wdp[i] = static_cast<int>(col.lengths[idx]);
+    }
+    SEXP ans = PROTECT(bs_new_xrawlist_single(classname, element_type, tag, st, wd));
+    Rcpp::RObject result(ans);
+    UNPROTECT(4);  // st, wd, tag, ans
+    return result;
+  }
+
+  // Multi-buffer: total decoded bytes exceed BS_TAG_CAP (> ~2 GB). Split at read
+  // boundaries into pool buffers each < BS_TAG_CAP. Content-correct; no single-
+  // buffer identical() reference exists (scanBam cannot return > 2 GB either).
+  SEXP grp = PROTECT(Rf_allocVector(INTSXP, n));
+  int* gp = INTEGER(grp);
+  std::vector<size_t> tag_first_read;  // first read index of each pool buffer
+  tag_first_read.push_back(0U);
+  size_t cur = 0U;       // bytes accumulated in the current tag
+  int gcur = 1;          // 1-based current tag index
+  size_t tag_base = 0U;  // byte offset (in col.bytes) where the current tag starts
+  for (R_xlen_t i = 0; i < n; ++i) {
+    const size_t idx = static_cast<size_t>(i);
+    const size_t w = col.lengths[idx];
+    if (cur > 0U && cur + w > BS_TAG_CAP) {  // start a new tag at read i
+      ++gcur;
+      tag_base = col.offsets[idx];
+      cur = 0U;
+      tag_first_read.push_back(idx);
+    }
+    stp[i] = static_cast<int>(col.offsets[idx] - tag_base) + 1;  // within-tag 1-based
+    wdp[i] = static_cast<int>(w);
+    gp[i] = gcur;
+    cur += w;
+  }
+  const int ntags = gcur;
+  SEXP tags = PROTECT(Rf_allocVector(VECSXP, ntags));
+  for (int t = 0; t < ntags; ++t) {
+    const size_t r0 = tag_first_read[static_cast<size_t>(t)];
+    const size_t b0 = col.offsets[r0];
+    const size_t b1 = (static_cast<size_t>(t) + 1U < tag_first_read.size())
+                          ? col.offsets[tag_first_read[static_cast<size_t>(t) + 1U]]
+                          : total;
+    const size_t sz = b1 - b0;
+    SEXP tag = Rf_allocVector(RAWSXP, static_cast<R_xlen_t>(sz));
+    SET_VECTOR_ELT(tags, t, tag);
+    if (sz > 0U) std::memcpy(RAW(tag), col.bytes.data() + b0, sz);
+  }
+  SEXP ans = PROTECT(bs_new_xrawlist(classname, element_type, tags, st, wd, grp));
+  Rcpp::RObject result(ans);
+  UNPROTECT(5);  // st, wd, grp, tags, ans
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Typed tag accumulation.
+//
+// Rsamtools::scanBam returns numeric SAM tags with their native R type (e.g.
+// NM:i as an integer vector, a float tag as a numeric vector), reserving
+// character output for A/Z/H/B tags. BamScale mirrors that here: each tag column
+// is accumulated as the widest type it needs, so a homogeneous numeric tag never
+// pays for per-value string formatting or per-value CHARSXP allocation. Columns
+// only fall back to character when a genuinely non-numeric value appears.
+// ---------------------------------------------------------------------------
+
+enum TagKind : uint8_t {
+  TAG_EMPTY = 0,  // no concrete value observed yet (only absent/NA)
+  TAG_INT   = 1,  // integer-valued numeric tag
+  TAG_DBL   = 2,  // real-valued numeric tag (float seen, or int out of R range)
+  TAG_STR   = 3   // character tag (A/Z/H/B), or numeric promoted after a string
+};
+
+// One probed value from a single read.
+struct TagValue {
+  uint8_t kind;       // 0 = absent/NA, 1 = numeric, 2 = string
+  double num;         // valid when kind == 1
+  bool is_integer;    // numeric came from an integer BAM type
+  bool int_safe;      // numeric fits in an R integer
+  std::string str;    // valid when kind == 2
+};
+
+inline std::string format_tag_num(const double v, const bool as_integer) {
+  if (as_integer) {
+    return std::to_string(static_cast<long long>(v));
+  }
+  std::ostringstream oss;
+  oss << static_cast<float>(v);
+  return oss.str();
+}
+
+TagValue probe_tag(pbam1_t& read, const std::string& tag) {
+  TagValue tv;
+  tv.kind = 0;
+  tv.num = NA_REAL;
+  tv.is_integer = true;
+  tv.int_safe = true;
+
+  const char type = read.Tag_Type(tag);
+  switch (type) {
+    case 'c': tv.kind = 1; tv.num = static_cast<double>(static_cast<int>(read.tagVal_c(tag))); break;
+    case 'C': tv.kind = 1; tv.num = static_cast<double>(static_cast<unsigned int>(read.tagVal_C(tag))); break;
+    case 's': tv.kind = 1; tv.num = static_cast<double>(static_cast<int>(read.tagVal_s(tag))); break;
+    case 'S': tv.kind = 1; tv.num = static_cast<double>(static_cast<unsigned int>(read.tagVal_S(tag))); break;
+    case 'i': tv.kind = 1; tv.num = static_cast<double>(read.tagVal_i(tag)); break;
+    case 'I': {
+      const uint32_t v = read.tagVal_I(tag);
+      tv.kind = 1;
+      tv.num = static_cast<double>(v);
+      if (v > 2147483647u) tv.int_safe = false;
+      break;
+    }
+    case 'f':
+      tv.kind = 1;
+      tv.is_integer = false;
+      tv.int_safe = false;
+      tv.num = static_cast<double>(read.tagVal_f(tag));
+      break;
+    case 'A':
+    case 'Z':
+    case 'H':
+    case 'B':
+      tv.kind = 2;
+      tv.str = extract_tag_as_string(read, tag);
+      break;
+    default:
+      tv.kind = 0;  // tag absent / unknown type -> NA
+      break;
+  }
+  return tv;
+}
+
+struct TagColumn {
+  uint8_t kind = TAG_EMPTY;
+  size_t n = 0U;          // records represented (num/str size once kind is known)
+  bool int_safe = true;   // all integer values fit in an R integer
+  std::vector<double> num;
+  PackedStringColumn str;
+
+  void clear() {
+    kind = TAG_EMPTY;
+    n = 0U;
+    int_safe = true;
+    num.clear();
+    str.clear();
+  }
+
+  void reserve(const size_t hint) {
+    if (hint == 0U) return;
+    if (kind == TAG_STR) {
+      str.reserve(hint, 0U);
+    } else {
+      num.reserve(hint);
+    }
+  }
+
+  // Convert already-accumulated entries to string form (numeric -> formatted,
+  // deferred absents -> NA sentinel). Only hit on the rare mixed-type column.
+  void promote_to_str() {
+    if (kind == TAG_STR) return;
+    PackedStringColumn s;
+    s.reserve(n, 0U);
+    if (kind == TAG_EMPTY) {
+      for (size_t i = 0; i < n; ++i) s.append(TAG_NA_SENTINEL);
+    } else {
+      const bool as_integer = (kind == TAG_INT);
+      for (size_t i = 0; i < num.size(); ++i) {
+        if (R_IsNA(num[i])) {
+          s.append(TAG_NA_SENTINEL);
+        } else {
+          s.append(format_tag_num(num[i], as_integer));
+        }
+      }
+    }
+    str = std::move(s);
+    num.clear();
+    num.shrink_to_fit();
+    kind = TAG_STR;
+  }
+
+  // Bring the column up to a numeric kind, materializing deferred absents.
+  void ensure_numeric(const uint8_t target) {
+    if (kind == TAG_EMPTY) {
+      num.assign(n, NA_REAL);
+      kind = target;
+    } else {
+      kind = target;  // INT -> DBL widening; stored values are already double
+    }
+  }
+
+  void append(const TagValue& tv) {
+    if (tv.kind == 1) {           // numeric value
+      if (kind == TAG_STR) {
+        str.append(format_tag_num(tv.num, tv.is_integer));
+      } else {
+        const uint8_t want = tv.is_integer ? TAG_INT : TAG_DBL;
+        if (kind == TAG_EMPTY) {
+          ensure_numeric(want);
+        } else if (want == TAG_DBL && kind == TAG_INT) {
+          kind = TAG_DBL;         // widen INT -> DBL, never narrow
+        }
+        if (!tv.int_safe) int_safe = false;
+        num.push_back(tv.num);
+      }
+    } else if (tv.kind == 2) {    // string value
+      if (kind != TAG_STR) promote_to_str();
+      str.append(tv.str);
+    } else {                      // absent / NA
+      if (kind == TAG_STR) {
+        str.append(TAG_NA_SENTINEL);
+      } else if (kind != TAG_EMPTY) {
+        num.push_back(NA_REAL);
+      }
+      // TAG_EMPTY: defer; materialized when the kind is decided.
+    }
+    ++n;
+  }
+
+  // Concatenate another thread's column onto this one, widening as needed.
+  void merge(TagColumn& other) {
+    const uint8_t target = std::max(kind, other.kind);
+    if (target == TAG_EMPTY) {
+      n += other.n;
+      return;
+    }
+    if (target == TAG_STR) {
+      promote_to_str();
+      other.promote_to_str();
+      str.append_from(other.str);
+    } else {
+      // target is TAG_INT or TAG_DBL
+      if (kind == TAG_EMPTY) ensure_numeric(target); else kind = target;
+      if (other.kind == TAG_EMPTY) other.ensure_numeric(target);
+      if (!other.int_safe) int_safe = false;
+      num.insert(num.end(), other.num.begin(), other.num.end());
+    }
+    n += other.n;
+  }
+
+  RObject finalize() const {
+    if (kind == TAG_STR) {
+      return packed_strings_to_character(str);
+    }
+    if (kind == TAG_INT && int_safe) {
+      IntegerVector v(static_cast<R_xlen_t>(n));
+      for (size_t i = 0; i < n; ++i) {
+        v[static_cast<R_xlen_t>(i)] = R_IsNA(num[i]) ? NA_INTEGER : static_cast<int>(num[i]);
+      }
+      return v;
+    }
+    if (kind == TAG_INT || kind == TAG_DBL) {
+      return NumericVector(num.begin(), num.end());
+    }
+    // TAG_EMPTY: tag never present -> all-NA character column (prior behaviour).
+    CharacterVector v(static_cast<R_xlen_t>(n));
+    for (R_xlen_t i = 0; i < static_cast<R_xlen_t>(n); ++i) v[i] = NA_STRING;
+    return v;
+  }
+};
+
+// Build an R factor directly from BAM reference ids. Levels are the header
+// chromosome names, so the integer ref id (+1) is already the factor code.
+// Unmapped / unset references (id < 0) become <NA>, matching Rsamtools::scanBam
+// (which returns rname/mrnm as factors with NA for absent references).
+IntegerVector factor_from_ids(
     const std::vector<int>& ref_ids,
     const std::vector<std::string>& chr_names
 ) {
   const R_xlen_t n = static_cast<R_xlen_t>(ref_ids.size());
-  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
-
-  std::vector<SEXP> chr_cache(chr_names.size(), R_NilValue);
-  const SEXP star = Rf_mkCharLen("*", 1);
+  const int n_levels = static_cast<int>(chr_names.size());
+  IntegerVector out(n);
 
   for (R_xlen_t i = 0; i < n; ++i) {
     const int ref_id = ref_ids[static_cast<size_t>(i)];
-    if (ref_id >= 0 && static_cast<size_t>(ref_id) < chr_names.size()) {
-      SEXP cached = chr_cache[static_cast<size_t>(ref_id)];
-      if (cached == R_NilValue) {
-        cached = Rf_mkCharLen(chr_names[static_cast<size_t>(ref_id)].c_str(),
-                              static_cast<int>(chr_names[static_cast<size_t>(ref_id)].size()));
-        chr_cache[static_cast<size_t>(ref_id)] = cached;
-      }
-      SET_STRING_ELT(out, i, cached);
-    } else {
-      SET_STRING_ELT(out, i, star);
-    }
+    out[i] = (ref_id >= 0 && ref_id < n_levels) ? (ref_id + 1) : NA_INTEGER;
   }
 
-  UNPROTECT(1);
-  return CharacterVector(out);
+  out.attr("levels") = wrap(chr_names);
+  out.attr("class") = "factor";
+  return out;
 }
 
-CharacterVector strands_from_codes(const std::vector<int>& strand_codes) {
+// Build an R factor from strand codes (0 = "+", 1 = "-", 2 = "*"), matching the
+// strand factor levels used by Rsamtools::scanBam / GenomicAlignments.
+IntegerVector strand_factor_from_codes(const std::vector<int>& strand_codes) {
   const R_xlen_t n = static_cast<R_xlen_t>(strand_codes.size());
-  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
-  const SEXP plus = Rf_mkCharLen("+", 1);
-  const SEXP minus = Rf_mkCharLen("-", 1);
-  const SEXP star = Rf_mkCharLen("*", 1);
+  IntegerVector out(n);
 
   for (R_xlen_t i = 0; i < n; ++i) {
     switch (strand_codes[static_cast<size_t>(i)]) {
-      case 1:
-        SET_STRING_ELT(out, i, minus);
-        break;
-      case 2:
-        SET_STRING_ELT(out, i, star);
-        break;
-      default:
-        SET_STRING_ELT(out, i, plus);
-        break;
+      case 1:  out[i] = 2; break;  // "-"
+      case 2:  out[i] = 3; break;  // "*"
+      default: out[i] = 1; break;  // "+"
     }
   }
 
-  UNPROTECT(1);
-  return CharacterVector(out);
+  out.attr("levels") = CharacterVector::create("+", "-", "*");
+  out.attr("class") = "factor";
+  return out;
 }
 
 struct QueryInterval {
@@ -576,14 +929,14 @@ List read_bam_cpp(
     stop("Failed to read BAM header");
   }
 
-  std::vector<std::string> qname_out;
+  PackedStringColumn qname_out;
   std::vector<int> flag_out;
   std::vector<int> rname_out;
   std::vector<int> pos_out;
   std::vector<int> strand_out;
   std::vector<int> qwidth_out;
   std::vector<int> mapq_out;
-  std::vector<std::string> cigar_out;
+  PackedStringColumn cigar_out;
   std::vector<int> mrnm_out;
   std::vector<int> mpos_out;
   std::vector<int> isize_out;
@@ -592,18 +945,18 @@ List read_bam_cpp(
   std::vector< std::vector<uint8_t> > seq_raw_out;
   std::vector< std::vector<uint8_t> > qual_raw_out;
   std::vector<std::string> which_label_out;
-  std::vector< std::vector<std::string> > tag_out(tag_names.size());
+  std::vector<TagColumn> tag_out(tag_names.size());
   size_t n_records_total = 0U;
 
-  struct ThreadChunk {
-    std::vector<std::string> qname;
+  struct alignas(64) ThreadChunk {
+    PackedStringColumn qname;
     std::vector<int> flag;
     std::vector<int> rname;
     std::vector<int> pos;
     std::vector<int> strand;
     std::vector<int> qwidth;
     std::vector<int> mapq;
-    std::vector<std::string> cigar;
+    PackedStringColumn cigar;
     std::vector<int> mrnm;
     std::vector<int> mpos;
     std::vector<int> isize;
@@ -612,7 +965,7 @@ List read_bam_cpp(
     std::vector< std::vector<uint8_t> > seq_raw;
     std::vector< std::vector<uint8_t> > qual_raw;
     std::vector<std::string> which_label;
-    std::vector< std::vector<std::string> > tag;
+    std::vector<TagColumn> tag;
     size_t n_records = 0U;
   };
 
@@ -624,14 +977,14 @@ List read_bam_cpp(
   const auto reserve_chunk = [&](ThreadChunk& local, const size_t hint) {
     if (hint == 0U) return;
 
-    if (need_qname) local.qname.reserve(hint);
+    if (need_qname) local.qname.reserve(hint, 0U);
     if (need_flag) local.flag.reserve(hint);
     if (need_rname) local.rname.reserve(hint);
     if (need_pos) local.pos.reserve(hint);
     if (need_strand) local.strand.reserve(hint);
     if (need_qwidth) local.qwidth.reserve(hint);
     if (need_mapq) local.mapq.reserve(hint);
-    if (need_cigar) local.cigar.reserve(hint);
+    if (need_cigar) local.cigar.reserve(hint, 0U);
     if (need_mrnm) local.mrnm.reserve(hint);
     if (need_mpos) local.mpos.reserve(hint);
     if (need_isize) local.isize.reserve(hint);
@@ -737,9 +1090,9 @@ List read_bam_cpp(
         if (need_qname) {
           const char* qname_ptr = read.read_name();
           const uint8_t qname_len = read.l_read_name();
-          local.qname.emplace_back(
+          local.qname.append(
             qname_ptr,
-            qname_ptr + (qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U)
+            qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U
           );
         }
         if (need_flag) {
@@ -769,7 +1122,7 @@ List read_bam_cpp(
         if (need_cigar) {
           cigar_scratch.clear();
           read.cigar(cigar_scratch);
-          local.cigar.push_back(cigar_scratch);
+          local.cigar.append(cigar_scratch);
         }
         if (need_mrnm) {
           const int32_t next_ref_id = read.next_refID();
@@ -797,7 +1150,7 @@ List read_bam_cpp(
               local.seq_raw.back().assign(seq_ptr, seq_ptr + n_bytes);
             }
           } else {
-            append_decoded_seq_ascii(local.seq, read.seq(), read_len);
+            append_decoded_seq_encoded(local.seq, read.seq(), read_len);
           }
         }
         if (need_qual) {
@@ -811,7 +1164,7 @@ List read_bam_cpp(
               );
             }
           } else {
-            append_encoded_qual_ascii(
+            append_encoded_qual_native(
               local.qual,
               reinterpret_cast<const uint8_t*>(read.qual()),
               read_len
@@ -823,7 +1176,7 @@ List read_bam_cpp(
         }
 
         for (size_t j = 0; j < tag_names.size(); ++j) {
-          local.tag[j].push_back(extract_tag_as_string(read, tag_names[j]));
+          local.tag[j].append(probe_tag(read, tag_names[j]));
         }
       }
     }
@@ -835,14 +1188,26 @@ List read_bam_cpp(
 
     if (batch_records > 0U) {
       const size_t target = n_records_total + batch_records;
-      if (need_qname) qname_out.reserve(target);
+      if (need_qname) {
+        size_t batch_qname_bytes = 0U;
+        for (unsigned int tid = 0; tid < threads; ++tid) {
+          batch_qname_bytes += chunk_data[tid].qname.bytes_size();
+        }
+        qname_out.reserve(target, qname_out.bytes_size() + batch_qname_bytes);
+      }
       if (need_flag) flag_out.reserve(target);
       if (need_rname) rname_out.reserve(target);
       if (need_pos) pos_out.reserve(target);
       if (need_strand) strand_out.reserve(target);
       if (need_qwidth) qwidth_out.reserve(target);
       if (need_mapq) mapq_out.reserve(target);
-      if (need_cigar) cigar_out.reserve(target);
+      if (need_cigar) {
+        size_t batch_cigar_bytes = 0U;
+        for (unsigned int tid = 0; tid < threads; ++tid) {
+          batch_cigar_bytes += chunk_data[tid].cigar.bytes_size();
+        }
+        cigar_out.reserve(target, cigar_out.bytes_size() + batch_cigar_bytes);
+      }
       if (need_mrnm) mrnm_out.reserve(target);
       if (need_mpos) mpos_out.reserve(target);
       if (need_isize) isize_out.reserve(target);
@@ -879,11 +1244,7 @@ List read_bam_cpp(
       n_records_total += local.n_records;
 
       if (need_qname) {
-        qname_out.insert(
-          qname_out.end(),
-          std::make_move_iterator(local.qname.begin()),
-          std::make_move_iterator(local.qname.end())
-        );
+        qname_out.append_from(local.qname);
       }
       if (need_flag) {
         flag_out.insert(flag_out.end(), local.flag.begin(), local.flag.end());
@@ -912,11 +1273,7 @@ List read_bam_cpp(
         mapq_out.insert(mapq_out.end(), local.mapq.begin(), local.mapq.end());
       }
       if (need_cigar) {
-        cigar_out.insert(
-          cigar_out.end(),
-          std::make_move_iterator(local.cigar.begin()),
-          std::make_move_iterator(local.cigar.end())
-        );
+        cigar_out.append_from(local.cigar);
       }
       if (need_mrnm) {
         mrnm_out.insert(
@@ -962,11 +1319,7 @@ List read_bam_cpp(
       }
 
       for (size_t j = 0; j < tag_names.size(); ++j) {
-        tag_out[j].insert(
-          tag_out[j].end(),
-          std::make_move_iterator(local.tag[j].begin()),
-          std::make_move_iterator(local.tag[j].end())
-        );
+        tag_out[j].merge(local.tag[j]);
       }
     }
   }
@@ -975,15 +1328,15 @@ List read_bam_cpp(
 
   const int n = static_cast<int>(n_records_total);
   List out;
-  if (need_qname) out["qname"] = wrap(qname_out);
+  if (need_qname) out["qname"] = packed_strings_to_character(qname_out);
   if (need_flag) out["flag"] = wrap(flag_out);
-  if (need_rname) out["rname"] = refs_from_ids(rname_out, chr_names);
+  if (need_rname) out["rname"] = factor_from_ids(rname_out, chr_names);
   if (need_pos) out["pos"] = wrap(pos_out);
-  if (need_strand) out["strand"] = strands_from_codes(strand_out);
+  if (need_strand) out["strand"] = strand_factor_from_codes(strand_out);
   if (need_qwidth) out["qwidth"] = wrap(qwidth_out);
   if (need_mapq) out["mapq"] = wrap(mapq_out);
-  if (need_cigar) out["cigar"] = wrap(cigar_out);
-  if (need_mrnm) out["mrnm"] = refs_from_ids(mrnm_out, chr_names);
+  if (need_cigar) out["cigar"] = packed_strings_to_character(cigar_out);
+  if (need_mrnm) out["mrnm"] = factor_from_ids(mrnm_out, chr_names);
   if (need_mpos) out["mpos"] = wrap(mpos_out);
   if (need_isize) out["isize"] = wrap(isize_out);
 
@@ -991,14 +1344,14 @@ List read_bam_cpp(
     if (need_seq_compact) {
       out["seq"] = raw_list_from_bytes(seq_raw_out);
     } else {
-      out["seq"] = packed_strings_to_character(seq_out);
+      out["seq"] = xstringset_from_packed(seq_out, "DNAStringSet", "DNAString");
     }
   }
   if (need_qual) {
     if (need_qual_compact) {
       out["qual"] = raw_list_from_bytes(qual_raw_out);
     } else {
-      out["qual"] = packed_strings_to_character(qual_out);
+      out["qual"] = xstringset_from_packed(qual_out, "PhredQuality", "BString");
     }
   }
   if (with_which_label) {
@@ -1006,7 +1359,7 @@ List read_bam_cpp(
   }
 
   for (size_t j = 0; j < tag_names.size(); ++j) {
-    out[tag_names[j]] = wrap(tag_out[j]);
+    out[tag_names[j]] = tag_out[j].finalize();
   }
 
   out.attr("class") = "data.frame";

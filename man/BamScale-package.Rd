@@ -21,5 +21,10 @@ Useful links:
 \author{
 \strong{Maintainer}: Chirag Parsania \email{chirag.parsania@gmail.com}
 
+Authors:
+\itemize{
+  \item Chirag Parsania \email{chirag.parsania@gmail.com}
+}
+
 }
 \keyword{internal}

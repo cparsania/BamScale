@@ -1,206 +1,148 @@
 # BamScale <a href="https://cparsania.github.io/BamScale"><img src="man/figures/logo.png" align="right" height="240" alt="BamScale website" /></a>
 
-> Bioconductor-Friendly Multithreaded BAM Processing
+> Bioconductor-friendly multithreaded BAM processing
 
-
+[![Bioconductor](https://bioconductor.org/shields/availability/devel/BamScale.svg)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
+[![Bioc build](https://bioconductor.org/shields/build/devel/bioc/BamScale.svg)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
+[![Bioc downloads](https://bioconductor.org/shields/downloads/devel/BamScale.svg)](https://bioconductor.org/packages/stats/bioc/BamScale/)
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
 [![pkgdown](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bioconductor Downloads](https://bioconductor.org/shields/downloads/release/BamScale.svg)](https://bioconductor.org/packages/stats/bioc/BamScale/)
-[![Bioconductor Time](https://bioconductor.org/shields/years-in-bioc/BamScale.svg)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
 
+**BamScale** is a multithreaded BAM reader for R, built on the [`ompBAM`](https://bioconductor.org/packages/ompBAM) OpenMP engine. It returns the *exact* Bioconductor objects you already use — verified **byte-identical** to `Rsamtools` and `GenomicAlignments` — but decodes each file across many cores, taking the read step off the critical path in alignment-centric workflows.
 
-BamScale is a multithreaded BAM processing package for R built on top of the `ompBAM` C++ engine. It is designed for Bioconductor users who need high-throughput BAM parsing while preserving familiar `Rsamtools` and `GenomicAlignments` workflow patterns.
+- **2.3–3.2× faster** single-file reads than `scanBam` / `readGAlignments`
+- **Drop-in**: same objects, same `ScanBamParam` filtering, same `BiocParallel` model
+- **Two parallel axes**: OpenMP `threads` *within* a file, `BiocParallel` *across* files
+- **Verified correct**: output is byte-identical to the standard tools at every thread count
 
-## Why BamScale in Bioconductor Workflows?
+## Benchmarks
 
-BamScale focuses on three goals:
+Intel Xeon Gold 6252 (96 cores), warm page cache, median of 5 iterations. Full methodology, figures, and fair-comparison details are in the [benchmark article](https://cparsania.github.io/BamScale/articles/benchmark-results.html).
 
-- speed on modern multi-core systems,
-- compatibility with common Bioconductor input/output contracts,
-- transparent benchmarking and reproducibility.
+**Single-file read throughput** — best BamScale configuration vs the single-threaded standard reader:
 
-In many Bioconductor pipelines, BAM access is still a major bottleneck. The core bottleneck is not only BAM decompression itself, but also the fact that existing R-facing workflows often rely on effectively single-threaded per-file access patterns. BamScale addresses this by exposing OpenMP threading from the `ompBAM` engine directly at the R interface, while still returning Bioconductor-friendly objects.
+| Read pattern | Comparator | Standard | BamScale | Threads | Speedup |
+| --- | --- | ---: | ---: | :---: | :---: |
+| Core alignment fields | `Rsamtools::scanBam` | 15.6 s | 6.8 s | 48 | **2.3×** |
+| `GAlignments` object | `GenomicAlignments::readGAlignments` | 10.9 s | 3.4 s | 48 | **3.2×** |
+| Sequence + base quality | `Rsamtools::scanBam` | 22.3 s | 8.1 s | 24 | **2.8×** |
 
-The practical design goal is not to replace familiar Bioconductor workflows with a separate ecosystem. Instead, BamScale aims to preserve the way users already work with:
+**End-to-end workflows** — BamScale swapped in for the read step only, every other step identical on both sides. The gain tracks how read-bound the workflow is (Amdahl's law):
 
-- `Rsamtools::scanBam()`-style field extraction,
-- `GenomicAlignments::readGAlignments()`-style alignment-object workflows,
-- `BiocParallel` file-level execution when multiple BAMs are processed together.
+| Workflow | Read fraction | End-to-end speedup |
+| --- | :---: | :---: |
+| ATAC fragment-size QC | 93% | **3.7×** |
+| Coverage → `RleList` | 76% | **2.5×** |
+| Coverage → bigWig | 21% | **1.2×** |
 
-This means BamScale is intended to fit where existing tooling already fits, but with an additional within-file threading axis that can remove the current parsing bottleneck for alignment-centric workloads.
+Every result is measured against output verified equal to the standard tool: the ATAC fragment-size table is byte-identical to `ATACseqQC::fragSizeDist` across 49.8M reads, and the coverage `RleList` is `identical()` to `GenomicAlignments::coverage()` at every thread count.
 
-Key capabilities:
-
-- OpenMP-enabled per-file parallelism via `threads`,
-- optional multi-file parallelism via `BiocParallel` (`BPPARAM`),
-- `ScanBamParam`-like filtering (`mapqFilter`, `flag`, `which`, `what`, `tag`),
-- multiple output modes:
-  - `data.frame` and `S4Vectors::DataFrame`,
-  - `GenomicAlignments::GAlignments`,
-  - `GenomicAlignments::GAlignmentPairs`,
-  - `scanBam`-shaped list output (`as = "scanBam"`).
-
-Here, `step1` refers to the common alignment-metadata extraction workload built from fields such as:
-
-- `qname`
-- `flag`
-- `rname`
-- `pos`
-- `mapq`
-- `cigar`
-
-This is the kind of BAM access pattern used by many downstream QC, filtering, and fragment-level summary workflows.
-
-## Compatibility with Existing Bioconductor Workflows
-
-BamScale is designed to be familiar to users who already work with `Rsamtools` and `GenomicAlignments`.
-
-- `step1`-style metadata extraction maps naturally onto `scanBam()`-like use cases.
-- `as = "GAlignments"` and `as = "GAlignmentPairs"` support alignment-object workflows used downstream in Bioconductor.
-- `BiocParallel` integration preserves the standard file-level parallel workflow model.
-
-The main added capability is that BamScale can also use multiple threads within each BAM file through `ompBAM`. That is the key difference from the baseline workflow pattern and the main reason it can remove read-parsing bottlenecks in workloads such as metadata extraction and alignment-object construction.
+> BamScale is not a raw-decode replacement for command-line `samtools`. Its job is fast, object-faithful decoding *inside* R — putting the cores a single-threaded reader leaves idle to work, and handing back the precise Bioconductor objects your analysis depends on.
 
 ## Installation
 
-### Prerequisites
+Requires R with a C++17 toolchain and an OpenMP-capable compiler; `ompBAM` and the other dependencies are pulled in automatically.
 
-- R with a C++17 toolchain
-- OpenMP-capable compiler/runtime
-- `ompBAM` available in your R library
-
-### Current install route (pre-Bioconductor release)
+BamScale is on [Bioconductor](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html) (currently in the `devel` branch):
 
 ```r
-if (!requireNamespace("BiocManager", quietly = TRUE)) {
-  install.packages("BiocManager")
-}
-BiocManager::install("ompBAM")
-
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
-remotes::install_github("cparsania/BamScale")
-```
-
-### After Bioconductor acceptance
-
-```r
+if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install(version = "devel")
 BiocManager::install("BamScale")
 ```
 
-## Quick Start
+Or install the development version from GitHub:
+
+```r
+remotes::install_github("cparsania/BamScale")
+```
+
+## Quick start
 
 ```r
 library(BamScale)
 
 bam <- ompBAM::example_BAM("Unsorted")
 
-# 1) Step1-style extraction
+# Core alignment fields (scanBam-style extraction)
 x <- bam_read(
-  file = bam,
-  what = c("qname", "flag", "rname", "pos", "mapq", "cigar"),
+  bam,
+  what    = c("qname", "flag", "rname", "pos", "mapq", "cigar"),
   threads = 4
 )
 
-# 2) Seq/qual in comparator-compatible mode
+# A GAlignments object (drop-in for readGAlignments)
+ga <- bam_read(
+  bam,
+  what    = c("rname", "pos", "cigar", "strand"),
+  as      = "GAlignments",
+  threads = 4
+)
+
+# Sequence + base quality, in standard-compatible objects
 sq <- bam_read(
-  file = bam,
-  what = c("qname", "seq", "qual"),
-  as = "data.frame",
+  bam,
+  what         = c("qname", "seq", "qual"),
   seqqual_mode = "compatible",
-  threads = 4
+  threads      = 4
 )
 
-# 2b) Seq/qual in compact mode (returns raw vectors, not plain strings)
-sq_compact <- bam_read(
-  file = bam,
-  what = c("qname", "qwidth", "seq", "qual"),
-  as = "data.frame",
-  seqqual_mode = "compact",
-  threads = 4
-)
-
-# 3) Fast chromosome-level counts
-cnt <- bam_count(file = bam, threads = 4)
+# Fast chromosome-level counts
+cnt <- bam_count(bam, threads = 4)
 ```
 
-### Interpreting `seqqual_mode = "compact"`
+## Output modes & compatibility
 
-Compact mode is an optimized BamScale-specific representation for `seq` and
-`qual`. It does not return ordinary character strings:
+BamScale fits where `Rsamtools` and `GenomicAlignments` already fit, adding a within-file threading axis on top:
 
-- `seq` is returned as a list-column of `raw` vectors containing BAM-native
-  packed sequence bytes (two bases per byte)
-- `qual` is returned as a list-column of `raw` vectors containing per-base
-  numeric Phred bytes
-- `qwidth` is required to decode compact `seq` back to base letters correctly
-- a quality byte value of `255` represents missing quality
+- **Field extraction** via `what = c("qname", "flag", "rname", "pos", "mapq", "cigar", ...)` — the metadata pattern behind most QC, filtering, and fragment-level summaries.
+- **Alignment objects** via `as = "GAlignments"` or `as = "GAlignmentPairs"`.
+- **`scanBam`-shaped lists** via `as = "scanBam"`, or a `data.frame` / `S4Vectors::DataFrame`.
+- **`ScanBamParam`-style filtering**: `mapqFilter`, `flag`, `which`, `what`, `tag`.
+- **File-level parallelism** via `BiocParallel` (`BPPARAM`), exactly as in a standard workflow.
 
-Compact mode is therefore best interpreted as a lower-level, deferred-decoding
-representation. It is useful when extraction throughput matters more than
-immediate string materialization. If downstream code expects ordinary sequence
-or quality strings, use `seqqual_mode = "compatible"` instead, or decode
-compact output explicitly:
+## Parallelism model
+
+BamScale parallelizes on two axes — across files via `BPPARAM` workers, and within each file via OpenMP `threads`. Approximate effective concurrency:
+
+```
+min(length(files), bpnworkers(BPPARAM)) * threads
+```
+
+With `auto_threads = TRUE`, BamScale keeps per-file thread counts high when possible — reducing the number of concurrently active file workers before it shrinks per-file threads. Within-file threading is the key difference from the baseline model, and the reason BamScale removes the read bottleneck when there are fewer files than cores.
+
+## Sequence/quality: `compatible` vs `compact`
+
+`seqqual_mode = "compatible"` (default for equivalence) returns ordinary `DNAStringSet` / `PhredQuality`-style output, byte-identical to `scanBam`.
+
+`seqqual_mode = "compact"` is a lower-level, deferred-decoding representation for when extraction throughput matters more than immediate string materialization:
+
+- `seq` — a list-column of `raw` vectors holding BAM-native packed bytes (two bases per byte)
+- `qual` — a list-column of `raw` vectors holding per-base Phred bytes (`255` = missing)
+- `qwidth` is required to decode compact `seq` back to base letters
+
+Decode it explicitly when needed:
 
 ```r
-sq_compact_decoded <- decode_seqqual_compact(sq_compact)
+sq_compact <- bam_read(
+  bam,
+  what         = c("qname", "qwidth", "seq", "qual"),
+  seqqual_mode = "compact",
+  threads      = 4
+)
+decoded <- decode_seqqual_compact(sq_compact)
 ```
 
-## Parallelism Model
+## Current limitations
 
-BamScale can parallelize on two axes:
+- `param$which` is implemented as sequential filtering, not indexed random-access jumps.
+- `seqqual_mode = "compact"` is optimization-oriented and not intended for strict cross-package output equivalence.
+- `GAlignments` / `GAlignmentPairs` outputs exclude unmapped records by design.
 
-- across files via `BPPARAM` workers,
-- within each file via OpenMP `threads`.
+## Reproducing the benchmarks
 
-Approximate effective concurrency:
-
-`min(length(file), bpnworkers(BPPARAM)) * threads`
-
-When `auto_threads = TRUE`, BamScale preserves higher per-file thread counts when possible by reducing the number of concurrently active file workers before shrinking per-file threads.
-
-## Benchmark Results and Reproducibility
-
-A dedicated benchmark article summarizes the current results and the relevant cross-tool comparisons:
-
-- pkgdown article:
-  - https://cparsania.github.io/BamScale/articles/benchmark-results.html
-- source:
-  - `vignettes/benchmark-results.Rmd`
-
-The article includes:
-
-- `step1`, `galignments`, and `seqqual` benchmark results
-- fair cross-package comparisons against `Rsamtools` and `GenomicAlignments`
-- compact-versus-compatible `seqqual` results for BamScale
-
-## Benchmarking
-
-Benchmark workflow and benchmark reporting assets are documented in:
-
-- [inst/benchmarks/README.md](inst/benchmarks/README.md)
-
-## Current Limitations
-
-- `param$which` is currently implemented as sequential filtering rather than indexed random-access jumps.
-- `seqqual_mode = "compact"` is optimization-oriented and not intended for strict cross-package output-equivalence comparisons.
-- `GAlignments` and `GAlignmentPairs` outputs exclude unmapped records by design.
-
-## Community and Support
-
-- Bioconductor support site (recommended for user-facing questions):
-  - https://support.bioconductor.org
-- Development issues and feature requests:
-  - https://github.com/cparsania/BamScale/issues
-
-When posting performance reports, include:
-
-- package versions,
-- hardware/storage context,
-- exact benchmark command and profile,
-- `threads`/`BPPARAM` settings.
+Benchmark drivers and reporting assets ship under [inst/benchmarks/](inst/benchmarks/) — see its [README](inst/benchmarks/README.md). Reported results come from `run_server_benchmark.R` (read patterns) and `run_workflow_benchmark.R` (end-to-end coverage and ATAC QC).
 
 ## Citation
 
@@ -208,17 +150,11 @@ When posting performance reports, include:
 citation("BamScale")
 ```
 
-If BamScale contributes to performance claims, please also cite `ompBAM`.
+If BamScale contributes to a performance claim, please also cite `ompBAM`.
 
 ## Contributing
 
-Pull requests are welcome. Please include:
-
-- a short motivation,
-- tests for behavior changes,
-- benchmark evidence for performance claims.
-
-Before opening a PR, run:
+Pull requests are welcome — please include a short motivation, tests for behavior changes, and benchmark evidence for performance claims. Before opening a PR:
 
 ```bash
 R CMD build .
@@ -226,6 +162,11 @@ R CMD check --as-cran BamScale_*.tar.gz
 Rscript -e "BiocCheck::BiocCheck('.')"
 ```
 
+## Community & support
+
+- User questions: [Bioconductor support site](https://support.bioconductor.org)
+- Bugs & feature requests: [GitHub issues](https://github.com/cparsania/BamScale/issues)
+
 ## License
 
-MIT (`LICENSE`).
+MIT — see [`LICENSE`](LICENSE).

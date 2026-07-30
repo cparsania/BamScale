@@ -11,6 +11,72 @@ test_that("bam_read returns selected fields", {
   expect_true(nrow(x) > 0)
 })
 
+test_that("rname, mrnm and strand are scanBam-compatible factors", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  x <- bam_read(
+    file = bam,
+    what = c("rname", "mrnm", "strand"),
+    as = "data.frame",
+    threads = 1
+  )
+
+  expect_s3_class(x$rname, "factor")
+  expect_s3_class(x$mrnm, "factor")
+  expect_s3_class(x$strand, "factor")
+  expect_identical(levels(x$strand), c("+", "-", "*"))
+
+  # Levels and integer codes match Rsamtools::scanBam exactly.
+  rs <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = c("rname", "mrnm", "strand"))
+  )[[1]]
+  expect_identical(levels(x$rname), levels(rs$rname))
+  expect_identical(as.integer(x$rname), as.integer(rs$rname))
+  expect_identical(as.integer(x$mrnm), as.integer(rs$mrnm))
+  expect_identical(as.character(x$strand), as.character(rs$strand))
+})
+
+test_that("numeric tags are returned with native scanBam-compatible types", {
+  # Build a small BAM carrying integer (i), float (f) and string (Z) tags,
+  # with some records omitting a tag so absent values decode to NA.
+  tmp <- tempfile(fileext = ".sam")
+  n <- 1500L
+  hdr <- c("@HD\tVN:1.6\tSO:coordinate", "@SQ\tSN:chr1\tLN:100000")
+  recs <- vapply(seq_len(n), function(i) {
+    core <- c(sprintf("r%05d", i), "0", "chr1", as.character(10L + i), "60",
+              "10M", "*", "0", "0", "ACGTACGTAC", "IIIIIIIIII")
+    opt <- if (i %% 3L == 0L) {
+      c(sprintf("AS:i:%d", 100L - (i %% 40L)), sprintf("RG:Z:g%d", i %% 3L))
+    } else {
+      c(sprintf("NM:i:%d", i %% 5L), sprintf("AS:i:%d", 100L - (i %% 40L)),
+        sprintf("XF:f:%.3f", (i %% 5L) + 0.25), sprintf("RG:Z:g%d", i %% 3L))
+    }
+    paste(c(core, opt), collapse = "\t")
+  }, character(1))
+  writeLines(c(hdr, recs), tmp)
+  bam <- Rsamtools::asBam(tmp, tempfile(), overwrite = TRUE, indexDestination = FALSE)
+
+  tags <- c("NM", "AS", "XF", "RG")
+  x <- bam_read(bam, what = "qname", tag = tags, as = "data.frame", threads = 2)
+  rs <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = "qname", tag = tags)
+  )[[1]]$tag
+
+  expect_type(x$NM, "integer")
+  expect_type(x$AS, "integer")
+  expect_type(x$XF, "double")
+  expect_type(x$RG, "character")
+
+  expect_identical(x$NM, rs$NM)
+  expect_identical(x$AS, rs$AS)
+  expect_equal(x$XF, rs$XF)
+  expect_identical(x$RG, rs$RG)
+
+  # Absent NM values decode to NA in the same positions as scanBam.
+  expect_identical(is.na(x$NM), is.na(rs$NM))
+})
+
 test_that("bam_read supports sequence and quality columns", {
   bam <- ompBAM::example_BAM("Unsorted")
   x <- bam_read(
@@ -69,6 +135,58 @@ test_that("scanBam seq/qual uses Biostrings classes when available", {
 
   expect_s4_class(x[[1]]$seq, "DNAStringSet")
   expect_s4_class(x[[1]]$qual, "PhredQuality")
+})
+
+
+test_that("seq and qual are byte-identical to Rsamtools::scanBam", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  rs <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = c("seq", "qual"))
+  )[[1]]
+
+  # data.frame mode now returns native Biostrings columns (previously character),
+  # built in C directly from the reader's shared byte buffer. For any result
+  # scanBam returns as a single pool buffer (small/moderate files) this is
+  # byte-for-byte identical(); larger inputs where scanBam fragments its pool
+  # remain content-identical but not object-identical() by design.
+  df <- bam_read(bam, what = c("seq", "qual"), as = "data.frame", threads = 1)
+  expect_s4_class(df$seq, "DNAStringSet")
+  expect_s4_class(df$qual, "PhredQuality")
+  expect_identical(df$seq, rs$seq)
+  expect_identical(df$qual, rs$qual)
+
+  # The multi-threaded merge preserves file order, so the result is unchanged.
+  df_mt <- bam_read(bam, what = c("seq", "qual"), as = "data.frame", threads = 4)
+  expect_identical(df_mt$seq, rs$seq)
+  expect_identical(df_mt$qual, rs$qual)
+
+  # scanBam output mode carries the same S4 objects through unchanged.
+  sb <- bam_read(bam, what = c("seq", "qual"), as = "scanBam", threads = 1)[[1]]
+  expect_identical(sb$seq, rs$seq)
+  expect_identical(sb$qual, rs$qual)
+})
+
+
+test_that("compatible seq/qual builds correctly on fresh SnowParam SOCK workers", {
+  # Regression guard: the C XStringSet builder resolves IRanges/XVector
+  # C-callables at runtime and instantiates Biostrings S4 classes. A fresh SOCK
+  # worker must have those namespaces loaded (via .onLoad) or it fails with
+  # "function '_new_IRanges' not provided" / "DNAStringSet is not a defined class".
+  skip_if_not_installed("BiocParallel")
+  bam <- ompBAM::example_BAM("Unsorted")
+  rs <- Rsamtools::scanBam(bam, param = Rsamtools::ScanBamParam(what = c("seq", "qual")))[[1]]
+  bp <- BiocParallel::SnowParam(2L, type = "SOCK")
+  res <- BiocParallel::bplapply(1:2, function(i) {
+    x <- BamScale::bam_read(bam, what = c("seq", "qual"), as = "data.frame", threads = 1)
+    list(seq = as.character(x$seq), qual = as.character(x$qual),
+         seq_cls = class(x$seq), qual_cls = class(x$qual))
+  }, BPPARAM = bp)
+
+  expect_identical(as.character(res[[1]]$seq_cls), "DNAStringSet")
+  expect_identical(as.character(res[[1]]$qual_cls), "PhredQuality")
+  expect_identical(res[[1]]$seq, as.character(rs$seq))
+  expect_identical(res[[1]]$qual, as.character(rs$qual))
 })
 
 
@@ -149,6 +267,33 @@ test_that("GAlignmentPairs output is available when package is installed", {
   )
 
   expect_s4_class(gp, "GAlignmentPairs")
+})
+
+
+test_that("GAlignments carries header seqlengths and gives identical coverage()", {
+  bam <- ompBAM::example_BAM("Unsorted")
+
+  g <- bam_read(
+    file = bam,
+    what = c("rname", "pos", "cigar", "strand"),
+    as = "GAlignments",
+    threads = 1
+  )
+  std <- GenomicAlignments::readGAlignments(bam)
+
+  # Header sequence lengths must be populated (not NA) and match the standard
+  # reader, so coverage()/export.bw() see true chromosome sizes rather than
+  # max-end truncation.
+  expect_identical(GenomeInfoDb::seqlevels(g), GenomeInfoDb::seqlevels(std))
+  expect_identical(GenomeInfoDb::seqlengths(g), GenomeInfoDb::seqlengths(std))
+  expect_false(any(is.na(GenomeInfoDb::seqlengths(g))))
+
+  # coverage() is byte-identical to the standard Bioconductor path -- the
+  # equivalence anchor for the coverage -> bigWig workflow benchmark.
+  expect_identical(
+    GenomicAlignments::coverage(g),
+    GenomicAlignments::coverage(std)
+  )
 })
 
 
@@ -304,8 +449,10 @@ test_that("compact seqqual round-trips to BamScale compatible output", {
 
   expect_identical(decoded$qname, compat$qname)
   expect_identical(decoded$qwidth, compat$qwidth)
-  expect_identical(decoded$seq, compat$seq)
-  expect_identical(decoded$qual, compat$qual)
+  # Compatible mode now returns native Biostrings columns, so compare the decoded
+  # compact strings against their character form.
+  expect_identical(decoded$seq, as.character(compat$seq))
+  expect_identical(decoded$qual, as.character(compat$qual))
 })
 
 test_that("compact seqqual decode matches Rsamtools sequence and quality output", {

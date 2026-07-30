@@ -1,545 +1,183 @@
 ---
-title: "Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads"
+title: "Benchmarking BamScale: reader throughput and end-to-end workflow impact"
 output:
   BiocStyle::html_document:
     toc: true
+    toc_depth: 2
 vignette: >
-  %\VignetteIndexEntry{Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads}
+  %\VignetteIndexEntry{Benchmarking BamScale: reader throughput and end-to-end workflow impact}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
-params:
-  step1_ga_results_dir: "run_20260320_133141"
-  seqqual_results_dir: "run_20260320_162359"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = FALSE,
-  warning = FALSE,
-  message = FALSE
-)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
+                      fig.width = 7, fig.height = 4, dpi = 120)
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
 ## Overview
 
-This article combines the final benchmark runs used for the current BamScale benchmark summary:
+`BamScale` is a multithreaded BAM reader, built on the `ompBAM` OpenMP engine, that
+returns the same native Bioconductor objects as the standard readers and is a
+drop-in replacement for `Rsamtools::scanBam` and
+`GenomicAlignments::readGAlignments`.
 
-- `step1` and `galignments` from `r params$step1_ga_results_dir`
-- `seqqual` from `r params$seqqual_results_dir`
+Reading a BAM is only one step of an analysis, so a faster reader speeds a workflow
+end-to-end **only in proportion to the time that workflow spends reading**
+(Amdahl's law). This vignette summarises benchmarks that quantify *both* the raw
+read speedup and its end-to-end effect on two standard workflows — coverage/bigWig
+track generation and ATAC-seq fragment-size QC — with BamScale output verified
+**byte-identical** to the standard tools.
 
-These runs were generated with the same server-first benchmark harness, the same balanced profile family, the same deterministic case order, and the same worker/thread budget policy. `Seqqual` is reported separately because it includes both the fair compatibility track and the optimized compact track.
+The numbers below are a concise summary of a representative benchmark run
+(Intel Xeon Gold 6252, 96 cores; warm page cache; median of 5 iterations). The
+benchmark harness that produces them is in `inst/benchmarks/`
+(`run_server_benchmark.R`, `run_workflow_benchmark.R`); see the last section to
+reproduce the full results.
 
-## Data Loading
-
-```{r benchmark-data-loading}
-suppressPackageStartupMessages({
-  library(readr)
-  library(dplyr)
-  library(tidyr)
-  library(ggplot2)
-  library(scales)
-})
-
-resolve_results_dir <- function(path) {
-  input_dir <- tryCatch(dirname(normalizePath(knitr::current_input(), winslash = "/", mustWork = TRUE)), error = function(e) NA_character_)
-  wd <- tryCatch(normalizePath(getwd(), winslash = "/", mustWork = TRUE), error = function(e) NA_character_)
-  candidates <- c(
-    path,
-    if (!is.na(input_dir)) file.path(input_dir, path) else NA_character_,
-    if (!is.na(input_dir)) file.path(input_dir, "..", path) else NA_character_,
-    if (!is.na(input_dir)) file.path(input_dir, "..", "..", path) else NA_character_,
-    if (!is.na(input_dir)) file.path(input_dir, "..", "inst", "benchmarks", path) else NA_character_,
-    if (!is.na(wd)) file.path(wd, path) else NA_character_,
-    if (!is.na(wd)) file.path(wd, "inst", "benchmarks", path) else NA_character_
-  )
-  candidates <- unique(candidates[!is.na(candidates) & nzchar(candidates)])
-  hits <- candidates[file.exists(candidates)]
-  if (length(hits) == 0) {
-    stop("Could not locate results_dir: ", path, call. = FALSE)
-  }
-  normalizePath(hits[[1]], winslash = "/", mustWork = TRUE)
-}
-
-read_if_exists <- function(path) {
-  if (file.exists(path)) readr::read_csv(path, show_col_types = FALSE) else tibble::tibble()
-}
-
-load_run <- function(path_label) {
-  dir_path <- resolve_results_dir(path_label)
-  summary_path <- if (file.exists(file.path(dir_path, "summary_qmd.csv"))) {
-    file.path(dir_path, "summary_qmd.csv")
-  } else {
-    file.path(dir_path, "summary.csv")
-  }
-
-  list(
-    label = basename(dir_path),
-    dir = dir_path,
-    summary = read_if_exists(summary_path),
-    files = read_if_exists(file.path(dir_path, "files.csv")),
-    host = read_if_exists(file.path(dir_path, "host_info.csv")),
-    reference_counts = read_if_exists(file.path(dir_path, "reference_counts.csv")),
-    correctness = read_if_exists(file.path(dir_path, "correctness_preflight.csv"))
-  )
-}
-
-run_main <- load_run(params$step1_ga_results_dir)
-run_seqqual <- load_run(params$seqqual_results_dir)
-
-main_ok <- run_main$summary %>%
-  filter(status == "ok", workload %in% c("step1", "galignments"), comparison_track == "fair")
-
-seq_ok <- run_seqqual$summary %>%
-  filter(status == "ok", workload == "seqqual")
-
-single_main <- main_ok %>% filter(scenario == "single")
-multi_main <- main_ok %>% filter(scenario == "multi")
-
-seq_single <- seq_ok %>% filter(scenario == "single")
-seq_multi <- seq_ok %>% filter(scenario == "multi")
-
-host_main <- if (nrow(run_main$host) > 0) run_main$host[1, ] else tibble::tibble()
-host_seq <- if (nrow(run_seqqual$host) > 0) run_seqqual$host[1, ] else tibble::tibble()
-```
-
-## Benchmark Provenance
-
-- Step1 and GAlignments run: `r run_main$label`
-- SeqQual run: `r run_seqqual$label`
-- Step1/GAlignments results directory: `r run_main$dir`
-- SeqQual results directory: `r run_seqqual$dir`
-
-```{r benchmark-provenance-table}
-run_overview_tbl <- tibble::tibble(
-  run = c(run_main$label, run_seqqual$label),
-  workloads = c("step1, galignments", "seqqual"),
-  profile = c(
-    if (nrow(run_main$host) > 0) host_main$profile[[1]] else NA_character_,
-    if (nrow(run_seqqual$host) > 0) host_seq$profile[[1]] else NA_character_
-  ),
-  cpu = c(
-    if (nrow(run_main$host) > 0) host_main$cpu_model[[1]] else NA_character_,
-    if (nrow(run_seqqual$host) > 0) host_seq$cpu_model[[1]] else NA_character_
-  ),
-  logical_cores = c(
-    if (nrow(run_main$host) > 0) host_main$logical_cores[[1]] else NA_integer_,
-    if (nrow(run_seqqual$host) > 0) host_seq$logical_cores[[1]] else NA_integer_
-  ),
-  total_mem_gb = c(
-    if (nrow(run_main$host) > 0) round(host_main$total_mem_gb[[1]], 1) else NA_real_,
-    if (nrow(run_seqqual$host) > 0) round(host_seq$total_mem_gb[[1]], 1) else NA_real_
-  ),
-  successful_cases = c(nrow(main_ok), nrow(seq_ok))
+```{r results-data}
+## Summary results (from the benchmark runs; see inst/benchmarks/ to reproduce).
+read_tbl <- data.frame(
+  Workload    = c("Core fields", "GAlignments", "Sequence + quality"),
+  Reads       = c("qname/flag/rname/pos/mapq/cigar", "-> GAlignments object", "seq + base quality"),
+  `Standard (s)` = c(15.6, 10.9, 22.3),
+  `BamScale (s)` = c(6.8, 3.4, 8.1),
+  Threads     = c(48L, 48L, 24L),
+  Speedup     = c(2.29, 3.22, 2.76),
+  check.names = FALSE
 )
 
-knitr::kable(run_overview_tbl, col.names = c("Run", "Workloads", "Profile", "CPU", "Logical cores", "RAM (GB)", "Successful cases"))
+spectrum_tbl <- data.frame(
+  Endpoint      = c("ATAC fragment-size QC", "GAlignments (read)", "Sequence + quality (read)",
+                    "Coverage -> RleList", "Core fields (read)", "Coverage -> bigWig"),
+  Layer         = c("workflow", "read", "read", "workflow", "read", "workflow"),
+  `Read fraction` = c(0.93, 1.00, 1.00, 0.76, 1.00, 0.21),
+  Speedup       = c(3.66, 3.22, 2.76, 2.50, 2.29, 1.23),
+  check.names = FALSE
+)
 ```
 
-## Methods Rationale
+## Read throughput on a single large BAM
 
-This benchmark suite covers three distinct access patterns:
+On a single large BAM, BamScale reads **2.3--3.2x faster** than the standard reader
+across three representative access patterns, because it spreads the BGZF decode
+across cores:
 
-- `step1`: alignment-metadata extraction without sequence/quality materialization. This is a good proxy for BAM filtering, fragment-length profiling, and fragment-distribution QC.
-- `galignments`: construction of alignment objects suitable for Bioconductor workflows centered on `GenomicAlignments`.
-- `seqqual`: full sequence and quality extraction. This is reported in two BamScale modes:
-  - `fair` compatibility mode, which is the closest comparator to `Rsamtools::scanBam`
-  - `optimized` compact mode, which reduces internal overhead and should be interpreted as an optimized BamScale track rather than a strict apples-to-apples replacement for the compatibility path
-
-Across all runs, the benchmark design emphasizes:
-
-- deterministic case order
-- balanced BamScale worker/thread plans
-- explicit comparator baselines
-- single-file and multi-file reporting
-- fixed 48-thread budget for multi-file plans
-
-## Input Files
-
-The same underlying four selected BAMs were used for both runs, with repeated files allowed to populate the 12-file multi-file benchmark set.
-
-```{r benchmark-input-files}
-run_main$files %>%
-  transmute(
-    file,
-    source,
-    selected_for_single,
-    selected_for_multi,
-    size_mb = round(size_mb, 1),
-    has_index
-  ) %>%
-  knitr::kable()
-```
-
-## Reference Counts
-
-```{r benchmark-reference-counts}
-bind_rows(
-  run_main$reference_counts %>% mutate(run = run_main$label),
-  run_seqqual$reference_counts %>% mutate(run = run_seqqual$label)
-) %>%
-  mutate(total_mb = round(total_mb, 1)) %>%
-  select(run, scenario, workload, n_files, n_records, total_mb) %>%
-  knitr::kable()
-```
-
-## Best-Observed Summary
-
-```{r best-observed-summary}
-best_summary_tbl <- bind_rows(main_ok, seq_ok) %>%
-  group_by(scenario, workload, comparison_track, method_family) %>%
-  slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
-  ungroup() %>%
-  mutate(
-    plan = paste0(bp_workers_effective, "x", threads_effective),
-    median_s = round(median_s, 3)
-  ) %>%
-  select(scenario, workload, comparison_track, method_family, method, plan, median_s)
-
-knitr::kable(best_summary_tbl, col.names = c("Scenario", "Workload", "Track", "Method family", "Method", "Plan", "Median time (s)"))
-```
-
-## BamScale-versus-Comparator Fold Change
-
-```{r fold-change-summary}
-best_fold_tbl <- function(df, scenario_name, include_optimized = FALSE) {
-  bamscale_fair <- df %>%
-    filter(scenario == scenario_name, method_family == "BamScale", comparison_track == "fair") %>%
-    group_by(workload) %>%
-    slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
-    ungroup() %>%
-    transmute(
-      scenario = scenario_name,
-      workload,
-      track = "fair",
-      bamscale_method = method,
-      bamscale_plan = paste0(bp_workers_effective, "x", threads_effective),
-      bamscale_s = median_s
-    ) %>%
-    left_join(
-      df %>%
-        filter(scenario == scenario_name, method_family != "BamScale", comparison_track == "fair") %>%
-        group_by(workload) %>%
-        slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
-        ungroup() %>%
-        transmute(
-          workload,
-          comparator_family = method_family,
-          comparator_method = method,
-          comparator_plan = paste0(bp_workers_effective, "x", threads_effective),
-          comparator_s = median_s
-        ),
-      by = "workload"
-    ) %>%
-    mutate(
-      fold_change = comparator_s / bamscale_s,
-      pct_faster = 100 * (1 - bamscale_s / comparator_s)
-    )
-
-  if (!include_optimized) {
-    return(bamscale_fair)
-  }
-
-  bamscale_optimized <- df %>%
-    filter(scenario == scenario_name, method_family == "BamScale", comparison_track == "optimized") %>%
-    group_by(workload) %>%
-    slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
-    ungroup() %>%
-    transmute(
-      scenario = scenario_name,
-      workload,
-      track = "optimized",
-      bamscale_method = method,
-      bamscale_plan = paste0(bp_workers_effective, "x", threads_effective),
-      bamscale_s = median_s
-    ) %>%
-    left_join(
-      df %>%
-        filter(scenario == scenario_name, method_family != "BamScale", comparison_track == "fair") %>%
-        group_by(workload) %>%
-        slice_min(order_by = median_s, n = 1, with_ties = FALSE) %>%
-        ungroup() %>%
-        transmute(
-          workload,
-          comparator_family = method_family,
-          comparator_method = method,
-          comparator_plan = paste0(bp_workers_effective, "x", threads_effective),
-          comparator_s = median_s
-        ),
-      by = "workload"
-    ) %>%
-    mutate(
-      fold_change = comparator_s / bamscale_s,
-      pct_faster = 100 * (1 - bamscale_s / comparator_s)
-    )
-
-  bind_rows(bamscale_fair, bamscale_optimized)
-}
-
-fold_tbl <- bind_rows(
-  best_fold_tbl(main_ok, "single"),
-  best_fold_tbl(main_ok, "multi"),
-  best_fold_tbl(seq_ok, "single", include_optimized = TRUE),
-  best_fold_tbl(seq_ok, "multi", include_optimized = TRUE)
-) %>%
-  mutate(
-    across(c(bamscale_s, comparator_s, fold_change, pct_faster), ~ round(.x, 3))
-  )
-
+```{r read-table}
 knitr::kable(
-  fold_tbl %>%
-    select(scenario, workload, track, comparator_family, comparator_method, comparator_plan,
-           comparator_s, bamscale_method, bamscale_plan, bamscale_s, fold_change, pct_faster),
-  col.names = c("Scenario", "Workload", "Track", "Comparator family", "Comparator method",
-                "Comparator plan", "Comparator time (s)", "BamScale method", "BamScale plan",
-                "BamScale time (s)", "Comparator/BamScale", "BamScale % faster")
+  transform(read_tbl, Speedup = sprintf("%.2fx", Speedup)),
+  caption = "Single-file read throughput: best BamScale configuration vs the single-threaded standard reader (median of 5 iterations)."
 )
 ```
 
-```{r fold-change-plot, fig.width=9, fig.height=4.8}
-ggplot(fold_tbl, aes(x = interaction(workload, scenario, track, sep = "\n"), y = fold_change, fill = workload)) +
-  geom_col(width = 0.75) +
-  geom_text(aes(label = sprintf("%.2fx", fold_change)), vjust = -0.3, size = 3.5) +
-  scale_fill_brewer(palette = "Set2") +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
-  labs(
-    x = NULL,
-    y = "Speedup over comparator (x)",
-    fill = "Workload",
-    title = "Best-observed BamScale speedup over comparator"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(axis.text.x = element_text(angle = 18, hjust = 1))
-```
-
-## Single-File `step1`
-
-```{r step1-single-plot, fig.width=7.5, fig.height=4.8}
-single_main %>%
-  filter(workload == "step1") %>%
-  mutate(
-    method_label = if_else(method_family == "BamScale", "BamScale", "Rsamtools::scanBam")
-  ) %>%
-  ggplot(aes(x = threads_effective, y = median_s, color = method_label)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.7) +
-  scale_x_continuous(breaks = c(1, 4, 12, 24, 48)) +
-  labs(
-    x = "Threads",
-    y = "Median time (s)",
-    color = NULL,
-    title = "Single-file step1 scaling"
-  ) +
+```{r read-plot, eval=has_ggplot}
+library(ggplot2)
+ggplot(read_tbl, aes(stats::reorder(Workload, Speedup), Speedup)) +
+  geom_col(fill = "#2a78d6", width = 0.65) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey55") +
+  geom_text(aes(label = sprintf("%.2fx", Speedup)), hjust = -0.15, size = 3.5) +
+  coord_flip() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(x = NULL, y = "speedup over standard reader (dashed = parity)",
+       title = "Single-file read speedup") +
   theme_minimal(base_size = 12)
 ```
 
-```{r step1-single-table}
-single_main %>%
-  filter(workload == "step1") %>%
-  mutate(plan = paste0(bp_workers_effective, "x", threads_effective)) %>%
-  select(method_family, method, plan, median_s) %>%
-  arrange(median_s) %>%
-  knitr::kable(col.names = c("Method family", "Method", "Plan", "Median time (s)"))
-```
+Two honest points. At **one thread** BamScale is at or near the single-threaded
+readers (the win comes from threading, not a faster single-core path), and the
+scaling is **strongly sublinear** -- roughly 2--3x on 48 threads, saturating by
+about 24 threads. The value is not near-linear scaling but the ability to use cores
+that a single-threaded reader cannot use at all -- as on one large BAM in an
+interactive session. Object-free command-line decoders such as `samtools` reach
+several-fold higher *raw* throughput, but return no Bioconductor object; BamScale's
+role is fast, object-faithful decoding *inside* R.
 
-## Single-File `galignments`
+## End-to-end impact tracks the read fraction
 
-```{r galignments-single-plot, fig.width=7.5, fig.height=4.8}
-single_main %>%
-  filter(workload == "galignments") %>%
-  mutate(
-    method_label = if_else(method_family == "BamScale", "BamScale", "GenomicAlignments::readGAlignments")
-  ) %>%
-  ggplot(aes(x = threads_effective, y = median_s, color = method_label)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.7) +
-  scale_x_continuous(breaks = c(1, 4, 12, 24, 48)) +
-  labs(
-    x = "Threads",
-    y = "Median time (s)",
-    color = NULL,
-    title = "Single-file galignments scaling"
-  ) +
-  theme_minimal(base_size = 12)
-```
+Embedding BamScale as the read step of a complete workflow, the end-to-end speedup
+follows how read-dominated that workflow is (Amdahl's law):
 
-```{r galignments-single-table}
-single_main %>%
-  filter(workload == "galignments") %>%
-  mutate(plan = paste0(bp_workers_effective, "x", threads_effective)) %>%
-  select(method_family, method, plan, median_s) %>%
-  arrange(median_s) %>%
-  knitr::kable(col.names = c("Method family", "Method", "Plan", "Median time (s)"))
-```
-
-## Multi-File `step1`
-
-```{r step1-multi-plot, fig.width=7.5, fig.height=4.8}
-multi_main %>%
-  filter(workload == "step1") %>%
-  mutate(
-    method_label = if_else(method_family == "BamScale", "BamScale", "Rsamtools::scanBam + BiocParallel")
-  ) %>%
-  ggplot(aes(x = bp_workers_effective, y = median_s, color = method_label, group = method_label)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.7) +
-  scale_x_continuous(breaks = c(1, 2, 4, 8, 12)) +
-  labs(
-    x = "Workers",
-    y = "Median time (s)",
-    color = NULL,
-    title = "Multi-file step1 scaling"
-  ) +
-  theme_minimal(base_size = 12)
-```
-
-## Multi-File `galignments`
-
-```{r galignments-multi-plot, fig.width=7.5, fig.height=4.8}
-multi_main %>%
-  filter(workload == "galignments") %>%
-  mutate(
-    method_label = if_else(method_family == "BamScale", "BamScale", "GenomicAlignments::readGAlignments + BiocParallel")
-  ) %>%
-  ggplot(aes(x = bp_workers_effective, y = median_s, color = method_label, group = method_label)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.7) +
-  scale_x_continuous(breaks = c(1, 2, 4, 8, 12)) +
-  labs(
-    x = "Workers",
-    y = "Median time (s)",
-    color = NULL,
-    title = "Multi-file galignments scaling"
-  ) +
-  theme_minimal(base_size = 12)
-```
-
-## Single-File `seqqual`
-
-```{r seqqual-single-plot, fig.width=8, fig.height=4.8}
-seq_single %>%
-  mutate(
-    method_label = case_when(
-      method_family == "BamScale" & comparison_track == "fair" ~ "BamScale (compatible)",
-      method_family == "BamScale" & comparison_track == "optimized" ~ "BamScale (compact)",
-      TRUE ~ "Rsamtools::scanBam"
-    )
-  ) %>%
-  ggplot(aes(x = threads_effective, y = median_s, color = method_label)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.7) +
-  scale_x_continuous(breaks = c(1, 4, 12, 24, 48)) +
-  labs(
-    x = "Threads",
-    y = "Median time (s)",
-    color = NULL,
-    title = "Single-file seqqual scaling"
-  ) +
-  theme_minimal(base_size = 12)
-```
-
-```{r seqqual-single-table}
-seq_single %>%
-  mutate(
-    method_label = case_when(
-      method_family == "BamScale" & comparison_track == "fair" ~ "BamScale (compatible)",
-      method_family == "BamScale" & comparison_track == "optimized" ~ "BamScale (compact)",
-      TRUE ~ "Rsamtools::scanBam"
-    ),
-    plan = paste0(bp_workers_effective, "x", threads_effective)
-  ) %>%
-  select(method_label, plan, median_s) %>%
-  arrange(median_s) %>%
-  knitr::kable(col.names = c("Method", "Plan", "Median time (s)"))
-```
-
-## Multi-File `seqqual`
-
-```{r seqqual-multi-plot, fig.width=8, fig.height=4.8}
-seq_multi %>%
-  mutate(
-    method_label = case_when(
-      method_family == "BamScale" & comparison_track == "fair" ~ "BamScale (compatible)",
-      method_family == "BamScale" & comparison_track == "optimized" ~ "BamScale (compact)",
-      TRUE ~ "Rsamtools::scanBam + BiocParallel"
-    )
-  ) %>%
-  ggplot(aes(x = bp_workers_effective, y = median_s, color = method_label, group = method_label)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.7) +
-  scale_x_continuous(breaks = c(1, 2, 4, 8, 12)) +
-  labs(
-    x = "Workers",
-    y = "Median time (s)",
-    color = NULL,
-    title = "Multi-file seqqual scaling"
-  ) +
-  theme_minimal(base_size = 12)
-```
-
-## Compact-versus-Compatible `seqqual`
-
-```{r compact-gain-table}
-compact_gain_tbl <- bind_rows(seq_single, seq_multi) %>%
-  filter(method_family == "BamScale") %>%
-  select(scenario, workload, comparison_track, bp_workers_effective, threads_effective, median_s) %>%
-  tidyr::pivot_wider(names_from = comparison_track, values_from = median_s) %>%
-  mutate(
-    plan = paste0(bp_workers_effective, "x", threads_effective),
-    compact_gain = fair / optimized
-  ) %>%
-  arrange(scenario, bp_workers_effective, threads_effective)
-
+```{r spectrum-table}
 knitr::kable(
-  compact_gain_tbl %>%
-    transmute(
-      scenario,
-      workload,
-      plan,
-      compatible_s = round(fair, 3),
-      compact_s = round(optimized, 3),
-      compact_gain = round(compact_gain, 3)
-    ),
-  col.names = c("Scenario", "Workload", "Plan", "Compatible time (s)", "Compact time (s)", "Compatible/Compact")
+  transform(spectrum_tbl,
+            `Read fraction` = paste0(round(100 * spectrum_tbl$`Read fraction`), "%"),
+            Speedup = sprintf("%.2fx", Speedup)),
+  caption = "End-to-end speedup by workload endpoint. Read-pattern rows are single-file read throughput; workflow rows are end-to-end. Read fraction is the share of the standard pipeline spent reading."
 )
 ```
 
-```{r compact-gain-plot, fig.width=7.5, fig.height=4.8}
-compact_gain_tbl %>%
-  ggplot(aes(x = plan, y = compact_gain, fill = scenario)) +
-  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-  geom_text(
-    aes(label = sprintf("%.2fx", compact_gain)),
-    position = position_dodge(width = 0.8),
-    vjust = -0.2,
-    size = 3.3
-  ) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
-  labs(
-    x = "BamScale plan",
-    y = "Compatible / compact",
-    fill = "Scenario",
-    title = "Compact seqqual reduces extraction overhead"
-  ) +
+```{r spectrum-plot, eval=has_ggplot, fig.height=4.4}
+ggplot(spectrum_tbl, aes(stats::reorder(Endpoint, Speedup), Speedup, fill = `Read fraction`)) +
+  geom_col(width = 0.65) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey55") +
+  geom_text(aes(label = sprintf("%.2fx", Speedup)), hjust = -0.15, size = 3.4) +
+  coord_flip() +
+  scale_fill_gradient(low = "#cfe0f3", high = "#12355b", labels = scales::percent) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(x = NULL, y = "end-to-end speedup (dashed = parity)", fill = "read\nfraction",
+       title = "The gain tracks the read fraction") +
   theme_minimal(base_size = 12)
 ```
 
-## Interpretation
+- **ATAC fragment-size QC** is nearly pure read, so BamScale's read speedup carries
+  through almost intact: **3.66x** end-to-end.
+- **Coverage -> bigWig** is dominated by the shared, single-threaded bigWig writer
+  (identical work on both arms), so the end-to-end gain is bounded at **1.23x** even
+  though the read phase itself is much faster. Stopping at the in-memory coverage
+  `RleList` -- what many analyses consume next -- recovers a **2.50x** gain.
 
-The benchmark shows a consistent pattern across the final runs:
+## A note on cores and fairness
 
-- `step1` and `galignments` are the strongest BamScale workloads.
-- For these workloads, the best BamScale plans are usually low-worker, high-thread configurations, indicating that within-file multithreading contributes more than aggressively increasing the number of file workers.
-- `Seqqual` is more difficult because sequence and quality extraction amplifies output-construction overhead.
-- BamScale compact mode narrows this gap substantially and produces the strongest single-file `seqqual` result, but the best multi-file `seqqual` comparator remains faster.
+A multithreaded reader can occupy cores a single-threaded one cannot. At **matched
+core counts** (both arms given the same number of cores) the two readers are
+approximately at parity for multi-file processing (coverage ~1.10x, ATAC ~0.96x):
+the single-threaded reader already saturates a machine by parallelising *across*
+files, so BamScale's multi-file advantage comes specifically from also threading
+*within* a file -- which pays off when there are fewer files than cores.
 
-In practical terms, these results support the following guidance:
+## Output is identical to the standard tools
 
-- use BamScale when metadata extraction or alignment-object construction is a bottleneck in BAM-heavy Bioconductor workflows
-- favor low-worker, high-thread plans when traversing one or a small number of large BAM files
-- interpret compact `seqqual` as an optimized throughput path rather than as a strict compatibility benchmark
+Every speedup above is against output verified equal to the standard tool. The
+coverage `RleList` is `identical()` to `GenomicAlignments::coverage()` on
+`readGAlignments` output at every thread count, and the ATAC fragment-size table is
+`identical()` to `Rsamtools::scanBam` and byte-identical (maximum absolute
+difference 0) to `ATACseqQC::fragSizeDist` over 49.8 million reads. This is what
+makes BamScale a genuine drop-in rather than an approximation.
 
-## Session Information
+## Try it
 
-```{r benchmark-session-info}
+```{r demo, echo=TRUE, eval=TRUE}
+library(BamScale)
+bam <- ompBAM::example_BAM("Unsorted")
+
+## Alignment fields as a GAlignments object (drop-in for readGAlignments)
+ga <- bam_read(bam, what = c("rname", "pos", "cigar", "strand"),
+               as = "GAlignments", threads = 2)
+ga
+
+## ...or core fields as a data.frame; `threads` controls within-file parallelism
+df <- bam_read(bam, what = c("qname", "flag", "mapq"),
+               as = "data.frame", threads = 2)
+head(df)
+```
+
+## Reproducing the full benchmarks
+
+The complete benchmark harness ships under `inst/benchmarks/`:
+
+```{r repro, echo=TRUE, eval=FALSE}
+dir(system.file("benchmarks", package = "BamScale"))
+# run_server_benchmark.R      : read-pattern micro-benchmarks (step1 / GAlignments / seq+qual)
+# run_workflow_benchmark.R    : end-to-end coverage and ATAC fragment-size QC workflows
+# download_atac_data.R        : fetch + index the ENCODE GM12878 ATAC BAMs used here
+```
+
+Each writes machine-readable result tables (`summary.csv`) plus host and
+correctness metadata, from which the summary figures above are derived.
+
+## Session information
+
+```{r session-info}
 sessionInfo()
 ```

@@ -114,12 +114,20 @@ oversubscribe the machine.
 
 Compatibility notes:
 \itemize{
+\item \code{rname}, \code{mrnm}, and \code{strand} are returned as \code{factor} columns, matching
+\code{Rsamtools::scanBam()}. \code{rname}/\code{mrnm} levels are the BAM header reference
+names; unmapped or unset references are \code{NA} (not \code{"*"}). \code{strand} has
+levels \code{c("+", "-", "*")}.
 \item Region filtering via \code{param$which} is supported as a sequential filter
 (not index-jump random access).
 \item Flag filtering uses \code{ScanBamFlag} semantics by converting logical flag
 requirements into required-set and required-unset bit masks.
-\item Tag values are returned as character columns. Scalar tags are scalar
-strings; \code{B} tags are comma-separated vectors.
+\item Tag values are returned with their native BAM-derived type, matching
+\code{scanBam()}: integer-valued tags (\code{c}, \code{C}, \code{s}, \code{S}, \code{i}, \code{I}) become
+integer columns (or double when a value exceeds the R integer range),
+floating-point (\code{f}) tags become double columns, and \code{A}/\code{Z}/\code{H}/\code{B} tags
+become character columns. \code{B} tags are comma-separated character values.
+Absent tag values are \code{NA}.
 \item \code{seqqual_mode = "compact"} is optimized for throughput-oriented
 benchmarking and returns raw list-columns for \code{seq}/\code{qual}, not ordinary
 sequence or quality strings. In this representation, \code{seq} contains
