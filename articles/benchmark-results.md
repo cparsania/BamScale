@@ -201,7 +201,7 @@ correctness metadata, from which the summary figures above are derived.
     ## [1] stats     graphics  grDevices utils     datasets  methods   base     
     ## 
     ## other attached packages:
-    ## [1] BamScale_0.99.12 ggplot2_4.0.3    BiocStyle_2.40.0
+    ## [1] BamScale_0.99.13 ggplot2_4.0.3    BiocStyle_2.40.0
     ## 
     ## loaded via a namespace (and not attached):
     ##  [1] SummarizedExperiment_1.42.0 gtable_0.3.6               
