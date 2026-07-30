@@ -138,6 +138,58 @@ test_that("scanBam seq/qual uses Biostrings classes when available", {
 })
 
 
+test_that("seq and qual are byte-identical to Rsamtools::scanBam", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  rs <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = c("seq", "qual"))
+  )[[1]]
+
+  # data.frame mode now returns native Biostrings columns (previously character),
+  # built in C directly from the reader's shared byte buffer. For any result
+  # scanBam returns as a single pool buffer (small/moderate files) this is
+  # byte-for-byte identical(); larger inputs where scanBam fragments its pool
+  # remain content-identical but not object-identical() by design.
+  df <- bam_read(bam, what = c("seq", "qual"), as = "data.frame", threads = 1)
+  expect_s4_class(df$seq, "DNAStringSet")
+  expect_s4_class(df$qual, "PhredQuality")
+  expect_identical(df$seq, rs$seq)
+  expect_identical(df$qual, rs$qual)
+
+  # The multi-threaded merge preserves file order, so the result is unchanged.
+  df_mt <- bam_read(bam, what = c("seq", "qual"), as = "data.frame", threads = 4)
+  expect_identical(df_mt$seq, rs$seq)
+  expect_identical(df_mt$qual, rs$qual)
+
+  # scanBam output mode carries the same S4 objects through unchanged.
+  sb <- bam_read(bam, what = c("seq", "qual"), as = "scanBam", threads = 1)[[1]]
+  expect_identical(sb$seq, rs$seq)
+  expect_identical(sb$qual, rs$qual)
+})
+
+
+test_that("compatible seq/qual builds correctly on fresh SnowParam SOCK workers", {
+  # Regression guard: the C XStringSet builder resolves IRanges/XVector
+  # C-callables at runtime and instantiates Biostrings S4 classes. A fresh SOCK
+  # worker must have those namespaces loaded (via .onLoad) or it fails with
+  # "function '_new_IRanges' not provided" / "DNAStringSet is not a defined class".
+  skip_if_not_installed("BiocParallel")
+  bam <- ompBAM::example_BAM("Unsorted")
+  rs <- Rsamtools::scanBam(bam, param = Rsamtools::ScanBamParam(what = c("seq", "qual")))[[1]]
+  bp <- BiocParallel::SnowParam(2L, type = "SOCK")
+  res <- BiocParallel::bplapply(1:2, function(i) {
+    x <- BamScale::bam_read(bam, what = c("seq", "qual"), as = "data.frame", threads = 1)
+    list(seq = as.character(x$seq), qual = as.character(x$qual),
+         seq_cls = class(x$seq), qual_cls = class(x$qual))
+  }, BPPARAM = bp)
+
+  expect_identical(as.character(res[[1]]$seq_cls), "DNAStringSet")
+  expect_identical(as.character(res[[1]]$qual_cls), "PhredQuality")
+  expect_identical(res[[1]]$seq, as.character(rs$seq))
+  expect_identical(res[[1]]$qual, as.character(rs$qual))
+})
+
+
 test_that("scanBam mode batches by which labels and keeps empty ranges", {
   bam <- ompBAM::example_BAM("Unsorted")
   seed <- bam_read(
@@ -215,6 +267,33 @@ test_that("GAlignmentPairs output is available when package is installed", {
   )
 
   expect_s4_class(gp, "GAlignmentPairs")
+})
+
+
+test_that("GAlignments carries header seqlengths and gives identical coverage()", {
+  bam <- ompBAM::example_BAM("Unsorted")
+
+  g <- bam_read(
+    file = bam,
+    what = c("rname", "pos", "cigar", "strand"),
+    as = "GAlignments",
+    threads = 1
+  )
+  std <- GenomicAlignments::readGAlignments(bam)
+
+  # Header sequence lengths must be populated (not NA) and match the standard
+  # reader, so coverage()/export.bw() see true chromosome sizes rather than
+  # max-end truncation.
+  expect_identical(GenomeInfoDb::seqlevels(g), GenomeInfoDb::seqlevels(std))
+  expect_identical(GenomeInfoDb::seqlengths(g), GenomeInfoDb::seqlengths(std))
+  expect_false(any(is.na(GenomeInfoDb::seqlengths(g))))
+
+  # coverage() is byte-identical to the standard Bioconductor path -- the
+  # equivalence anchor for the coverage -> bigWig workflow benchmark.
+  expect_identical(
+    GenomicAlignments::coverage(g),
+    GenomicAlignments::coverage(std)
+  )
 })
 
 
@@ -370,8 +449,10 @@ test_that("compact seqqual round-trips to BamScale compatible output", {
 
   expect_identical(decoded$qname, compat$qname)
   expect_identical(decoded$qwidth, compat$qwidth)
-  expect_identical(decoded$seq, compat$seq)
-  expect_identical(decoded$qual, compat$qual)
+  # Compatible mode now returns native Biostrings columns, so compare the decoded
+  # compact strings against their character form.
+  expect_identical(decoded$seq, as.character(compat$seq))
+  expect_identical(decoded$qual, as.character(compat$qual))
 })
 
 test_that("compact seqqual decode matches Rsamtools sequence and quality output", {

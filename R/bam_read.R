@@ -835,14 +835,18 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
         return(methods::slot(GenomicAlignments::GAlignments(), "seqinfo"))
     }
 
-    strand_levels <- c("+", "-", "*")
-    template <- GenomicAlignments::GAlignments(
-        seqnames = S4Vectors::Rle(factor(character(), levels = seqlevels)),
-        pos = integer(),
-        cigar = character(),
-        strand = S4Vectors::Rle(factor(character(), levels = strand_levels))
-    )
-    methods::slot(template, "seqinfo")
+    # Reuse the BAM-header sequence lengths the C++ reader attaches to `raw_df`
+    # (`seqnames_header` / `seqlengths_header`). Without them the GAlignments
+    # carries NA seqlengths, so coverage() extends each seqlevel only to its max
+    # end (diverging from readGAlignments()) and export.bw() would write
+    # truncated chromosome sizes.
+    header_names <- attr(raw_df, "seqnames_header")
+    header_lens <- attr(raw_df, "seqlengths_header")
+    seqlen <- rep(NA_integer_, length(seqlevels))
+    if (!is.null(header_names) && !is.null(header_lens)) {
+        seqlen <- as.integer(header_lens[match(seqlevels, as.character(header_names))])
+    }
+    GenomeInfoDb::Seqinfo(seqnames = as.character(seqlevels), seqlengths = seqlen)
 }
 
 .bamscale_subset_metadata <- function(df, idx, cols) {
@@ -978,13 +982,17 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
 
 
 .bamscale_scanbam_biostrings <- function(rec) {
-    if ("seq" %in% names(rec)) {
+    # On the compatible path the C++ reader now returns `seq`/`qual` already as
+    # DNAStringSet/PhredQuality (built directly from the shared byte buffer), so
+    # this conversion is a no-op there. It only fires as a fallback if a plain
+    # character column reaches here (e.g. the ABI self-check demoted the reader).
+    if ("seq" %in% names(rec) && !methods::is(rec$seq, "XStringSet")) {
         seq_vals <- as.character(rec$seq)
         seq_vals[is.na(seq_vals)] <- "N"
         rec$seq <- Biostrings::DNAStringSet(seq_vals)
     }
 
-    if ("qual" %in% names(rec)) {
+    if ("qual" %in% names(rec) && !methods::is(rec$qual, "XStringSet")) {
         qual_vals <- as.character(rec$qual)
         qual_vals[is.na(qual_vals)] <- "*"
         rec$qual <- Biostrings::PhredQuality(qual_vals)

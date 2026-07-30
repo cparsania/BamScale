@@ -1,7 +1,7 @@
 Package: BamScale
 Type: Package
 Title: Bioconductor-Friendly Multithreaded BAM Processing
-Version: 0.99.11
+Version: 0.99.12
 Authors@R: c(
     person("Chirag", "Parsania", email = "chirag.parsania@gmail.com", role = c("aut", "cre"))
   )
@@ -13,11 +13,11 @@ biocViews: Software, DataImport, Sequencing, Coverage, Alignment, QualityControl
 Encoding: UTF-8
 LazyData: false
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
 Imports:
     BiocGenerics,
     BiocParallel,
     Biostrings,
+    GenomeInfoDb,
     GenomicAlignments,
     GenomicRanges,
     IRanges,
@@ -28,13 +28,15 @@ Imports:
     S4Vectors
 LinkingTo:
     Rcpp,
-    ompBAM
+    ompBAM,
+    S4Vectors,
+    IRanges,
+    XVector
 Suggests:
     BiocStyle,
     chipseqDBData,
     dplyr,
     ExperimentHub,
-    GenomeInfoDb,
     ggplot2,
     knitr,
     readr,
@@ -50,3 +52,4 @@ SystemRequirements: C++17, OpenMP
 NeedsCompilation: yes
 URL: https://cparsania.github.io/BamScale/
 BugReports: https://github.com/cparsania/BamScale/issues
+Config/roxygen2/version: 8.0.0

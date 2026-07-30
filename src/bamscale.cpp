@@ -15,6 +15,16 @@ using namespace Rcpp;
 #include <unordered_map>
 #include <vector>
 
+// Defined in xstringset_build.c: construct Biostrings XStringSet objects
+// (DNAStringSet / PhredQuality) directly from a shared byte buffer via the
+// R_GetCCallable-exported XVector/IRanges constructors.
+extern "C" {
+SEXP bs_new_xrawlist_single(const char* classname, const char* element_type,
+                            SEXP tag, SEXP start, SEXP width);
+SEXP bs_new_xrawlist(const char* classname, const char* element_type,
+                     SEXP tags, SEXP start, SEXP width, SEXP group);
+}
+
 namespace {
 
 static const std::string TAG_NA_SENTINEL = "__BAMSCALE_TAG_NA__";
@@ -34,7 +44,9 @@ unsigned int clamp_threads(const int requested) {
 struct PackedStringColumn;
 
 inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases);
+inline void append_decoded_seq_encoded(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases);
 inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases);
+inline void append_encoded_qual_native(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases);
 
 template <typename T>
 std::string join_numeric_vector(const std::vector<T>& x) {
@@ -228,6 +240,42 @@ inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* pac
   }
 }
 
+// Fill `out` with DNAString *internal* encoding: BAM nt16 codes 1-15 map to
+// themselves and code 0 ('=') maps to 16, exactly matching the byte layout a
+// DNAStringSet's shared pool holds (verified against Rsamtools::scanBam). This
+// skips the ASCII intermediate entirely — the nibble becomes the pool byte.
+inline void append_decoded_seq_encoded(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases) {
+  static const char enc[16] = {
+    16, 1, 2, 3,
+    4, 5, 6, 7,
+    8, 9, 10, 11,
+    12, 13, 14, 15
+  };
+
+  const size_t offset = out.bytes.size();
+  const size_t len = static_cast<size_t>(n_bases);
+  out.offsets.push_back(offset);
+  out.lengths.push_back(len);
+
+  if (len == 0U || packed_seq == NULL) return;
+
+  out.bytes.resize(offset + len);
+  char* dst = out.bytes.data() + offset;
+
+  const uint32_t n_pairs = n_bases >> 1;
+  uint32_t j = 0U;
+  for (uint32_t i = 0; i < n_pairs; ++i) {
+    const uint8_t byte = packed_seq[i];
+    dst[j++] = enc[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
+    dst[j++] = enc[static_cast<uint8_t>(byte & 0x0FU)];
+  }
+
+  if ((n_bases & 1U) != 0U) {
+    const uint8_t byte = packed_seq[n_pairs];
+    dst[j] = enc[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
+  }
+}
+
 inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases) {
   const size_t offset = out.bytes.size();
   const size_t len = static_cast<size_t>(n_bases);
@@ -258,6 +306,26 @@ inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qu
   }
 }
 
+// Fill `out` with PhredQuality bytes exactly as Rsamtools::scanBam does: full
+// read width, each byte (q + 33) & 0xFF. A missing quality string (ompBAM fills
+// it with 0xFF to l_seq) therefore becomes width-many 0x20 (space) bytes, NOT a
+// width-1 "*". This matches scanBam byte-for-byte.
+inline void append_encoded_qual_native(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases) {
+  const size_t offset = out.bytes.size();
+  const size_t len = static_cast<size_t>(n_bases);
+  out.offsets.push_back(offset);
+  out.lengths.push_back(len);
+
+  if (len == 0U || qual_ptr == NULL) return;
+
+  out.bytes.resize(offset + len);
+  char* dst = out.bytes.data() + offset;
+  for (uint32_t i = 0; i < n_bases; ++i) {
+    dst[static_cast<size_t>(i)] =
+        static_cast<char>((static_cast<unsigned int>(qual_ptr[i]) + 33U) & 0xFFU);
+  }
+}
+
 CharacterVector packed_strings_to_character(const PackedStringColumn& packed) {
   const R_xlen_t n = static_cast<R_xlen_t>(packed.size());
   SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
@@ -280,6 +348,99 @@ CharacterVector packed_strings_to_character(const PackedStringColumn& packed) {
 
   UNPROTECT(1);
   return CharacterVector(out);
+}
+
+// Split threshold for the shared pool. A DNAStringSet/PhredQuality pool buffer,
+// like R's SharedRaw and the IRanges start/width, is indexed by int, so a single
+// buffer can hold up to INT_MAX bytes. Rsamtools::scanBam uses exactly this
+// limit, so matching it means any result scanBam can produce (< INT_MAX bytes)
+// takes our single-buffer path and is byte-for-byte identical() to scanBam;
+// only a > INT_MAX result (which scanBam cannot return either) splits into
+// multiple buffers. `total < BS_TAG_CAP` keeps every start+1 within int.
+static const size_t BS_TAG_CAP = 2147483647U;  // INT_MAX
+
+// Build a DNAStringSet / PhredQuality from a merged PackedStringColumn, sharing
+// its `bytes` buffer as the XStringSet pool (one memcpy, no per-element CHARSXP).
+// `classname`/`element_type` select the S4 type: ("DNAStringSet","DNAString")
+// or ("PhredQuality","BString"). Single buffer when total < BS_TAG_CAP (the
+// whole benchmark, identical() to scanBam); multi-buffer only above that.
+Rcpp::RObject xstringset_from_packed(const PackedStringColumn& col,
+                                     const char* classname,
+                                     const char* element_type) {
+  const R_xlen_t n = static_cast<R_xlen_t>(col.size());
+  const size_t total = col.bytes.size();
+
+  if (n == 0) {
+    SEXP tag = PROTECT(Rf_allocVector(RAWSXP, 0));
+    SEXP st = PROTECT(Rf_allocVector(INTSXP, 0));
+    SEXP wd = PROTECT(Rf_allocVector(INTSXP, 0));
+    SEXP ans = PROTECT(bs_new_xrawlist_single(classname, element_type, tag, st, wd));
+    Rcpp::RObject result(ans);
+    UNPROTECT(4);
+    return result;
+  }
+
+  SEXP st = PROTECT(Rf_allocVector(INTSXP, n));
+  SEXP wd = PROTECT(Rf_allocVector(INTSXP, n));
+  int* stp = INTEGER(st);
+  int* wdp = INTEGER(wd);
+
+  if (total < BS_TAG_CAP) {
+    // Single shared buffer — identical() to Rsamtools::scanBam.
+    SEXP tag = PROTECT(Rf_allocVector(RAWSXP, static_cast<R_xlen_t>(total)));
+    if (total > 0U) std::memcpy(RAW(tag), col.bytes.data(), total);  // the only copy
+    for (R_xlen_t i = 0; i < n; ++i) {
+      const size_t idx = static_cast<size_t>(i);
+      stp[i] = static_cast<int>(col.offsets[idx]) + 1;  // 1-based within the tag
+      wdp[i] = static_cast<int>(col.lengths[idx]);
+    }
+    SEXP ans = PROTECT(bs_new_xrawlist_single(classname, element_type, tag, st, wd));
+    Rcpp::RObject result(ans);
+    UNPROTECT(4);  // st, wd, tag, ans
+    return result;
+  }
+
+  // Multi-buffer: total decoded bytes exceed BS_TAG_CAP (> ~2 GB). Split at read
+  // boundaries into pool buffers each < BS_TAG_CAP. Content-correct; no single-
+  // buffer identical() reference exists (scanBam cannot return > 2 GB either).
+  SEXP grp = PROTECT(Rf_allocVector(INTSXP, n));
+  int* gp = INTEGER(grp);
+  std::vector<size_t> tag_first_read;  // first read index of each pool buffer
+  tag_first_read.push_back(0U);
+  size_t cur = 0U;       // bytes accumulated in the current tag
+  int gcur = 1;          // 1-based current tag index
+  size_t tag_base = 0U;  // byte offset (in col.bytes) where the current tag starts
+  for (R_xlen_t i = 0; i < n; ++i) {
+    const size_t idx = static_cast<size_t>(i);
+    const size_t w = col.lengths[idx];
+    if (cur > 0U && cur + w > BS_TAG_CAP) {  // start a new tag at read i
+      ++gcur;
+      tag_base = col.offsets[idx];
+      cur = 0U;
+      tag_first_read.push_back(idx);
+    }
+    stp[i] = static_cast<int>(col.offsets[idx] - tag_base) + 1;  // within-tag 1-based
+    wdp[i] = static_cast<int>(w);
+    gp[i] = gcur;
+    cur += w;
+  }
+  const int ntags = gcur;
+  SEXP tags = PROTECT(Rf_allocVector(VECSXP, ntags));
+  for (int t = 0; t < ntags; ++t) {
+    const size_t r0 = tag_first_read[static_cast<size_t>(t)];
+    const size_t b0 = col.offsets[r0];
+    const size_t b1 = (static_cast<size_t>(t) + 1U < tag_first_read.size())
+                          ? col.offsets[tag_first_read[static_cast<size_t>(t) + 1U]]
+                          : total;
+    const size_t sz = b1 - b0;
+    SEXP tag = Rf_allocVector(RAWSXP, static_cast<R_xlen_t>(sz));
+    SET_VECTOR_ELT(tags, t, tag);
+    if (sz > 0U) std::memcpy(RAW(tag), col.bytes.data() + b0, sz);
+  }
+  SEXP ans = PROTECT(bs_new_xrawlist(classname, element_type, tags, st, wd, grp));
+  Rcpp::RObject result(ans);
+  UNPROTECT(5);  // st, wd, grp, tags, ans
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -989,7 +1150,7 @@ List read_bam_cpp(
               local.seq_raw.back().assign(seq_ptr, seq_ptr + n_bytes);
             }
           } else {
-            append_decoded_seq_ascii(local.seq, read.seq(), read_len);
+            append_decoded_seq_encoded(local.seq, read.seq(), read_len);
           }
         }
         if (need_qual) {
@@ -1003,7 +1164,7 @@ List read_bam_cpp(
               );
             }
           } else {
-            append_encoded_qual_ascii(
+            append_encoded_qual_native(
               local.qual,
               reinterpret_cast<const uint8_t*>(read.qual()),
               read_len
@@ -1183,14 +1344,14 @@ List read_bam_cpp(
     if (need_seq_compact) {
       out["seq"] = raw_list_from_bytes(seq_raw_out);
     } else {
-      out["seq"] = packed_strings_to_character(seq_out);
+      out["seq"] = xstringset_from_packed(seq_out, "DNAStringSet", "DNAString");
     }
   }
   if (need_qual) {
     if (need_qual_compact) {
       out["qual"] = raw_list_from_bytes(qual_raw_out);
     } else {
-      out["qual"] = packed_strings_to_character(qual_out);
+      out["qual"] = xstringset_from_packed(qual_out, "PhredQuality", "BString");
     }
   }
   if (with_which_label) {
