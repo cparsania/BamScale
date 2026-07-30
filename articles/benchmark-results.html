@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads • BamScale</title>
+<title>Benchmarking BamScale: reader throughput and end-to-end workflow impact • BamScale</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="../favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="../favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -15,7 +15,7 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Benchmarking BamScale: reader throughput and end-to-end workflow impact">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -25,7 +25,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.10</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.12</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -41,7 +41,7 @@
 <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Articles</h6></li>
     <li><a class="dropdown-item" href="../articles/BamScale-intro.html">Getting started with BamScale</a></li>
-    <li><a class="dropdown-item" href="../articles/benchmark-results.html">Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads</a></li>
+    <li><a class="dropdown-item" href="../articles/benchmark-results.html">Benchmarking BamScale: reader throughput and end-to-end workflow impact</a></li>
   </ul>
 </li>
       </ul>
@@ -62,7 +62,7 @@
 
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-      <img src="../logo.png" class="logo" alt=""><h1>Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads</h1>
+      <img src="../logo.png" class="logo" alt=""><h1>Benchmarking BamScale: reader throughput and end-to-end workflow impact</h1>
             
       
       <small class="dont-index">Source: <a href="https://github.com/cparsania/BamScale/blob/main/vignettes/benchmark-results.Rmd" class="external-link"><code>vignettes/benchmark-results.Rmd</code></a></small>
@@ -74,876 +74,255 @@
 <div class="section level2">
 <h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p>This article combines the final benchmark runs used for the current
-BamScale benchmark summary:</p>
-<ul>
-<li>
-<code>step1</code> and <code>galignments</code> from
-run_20260320_133141</li>
-<li>
-<code>seqqual</code> from run_20260320_162359</li>
-</ul>
-<p>These runs were generated with the same server-first benchmark
-harness, the same balanced profile family, the same deterministic case
-order, and the same worker/thread budget policy. <code>Seqqual</code> is
-reported separately because it includes both the fair compatibility
-track and the optimized compact track.</p>
+<p><code>BamScale</code> is a multithreaded BAM reader, built on the
+<code>ompBAM</code> OpenMP engine, that returns the same native
+Bioconductor objects as the standard readers and is a drop-in
+replacement for <code><a href="https://rdrr.io/pkg/Rsamtools/man/scanBam.html" class="external-link">Rsamtools::scanBam</a></code> and
+<code><a href="https://rdrr.io/pkg/GenomicAlignments/man/readGAlignments.html" class="external-link">GenomicAlignments::readGAlignments</a></code>.</p>
+<p>Reading a BAM is only one step of an analysis, so a faster reader
+speeds a workflow end-to-end <strong>only in proportion to the time that
+workflow spends reading</strong> (Amdahl’s law). This vignette
+summarises benchmarks that quantify <em>both</em> the raw read speedup
+and its end-to-end effect on two standard workflows — coverage/bigWig
+track generation and ATAC-seq fragment-size QC — with BamScale output
+verified <strong>byte-identical</strong> to the standard tools.</p>
+<p>The numbers below are a concise summary of a representative benchmark
+run (Intel Xeon Gold 6252, 96 cores; warm page cache; median of 5
+iterations). The benchmark harness that produces them is in
+<code>inst/benchmarks/</code> (<code>run_server_benchmark.R</code>,
+<code>run_workflow_benchmark.R</code>); see the last section to
+reproduce the full results.</p>
 </div>
 <div class="section level2">
-<h2 id="data-loading">Data Loading<a class="anchor" aria-label="anchor" href="#data-loading"></a>
+<h2 id="read-throughput-on-a-single-large-bam">Read throughput on a single large BAM<a class="anchor" aria-label="anchor" href="#read-throughput-on-a-single-large-bam"></a>
 </h2>
-</div>
-<div class="section level2">
-<h2 id="benchmark-provenance">Benchmark Provenance<a class="anchor" aria-label="anchor" href="#benchmark-provenance"></a>
-</h2>
-<ul>
-<li>Step1 and GAlignments run: run_20260320_133141</li>
-<li>SeqQual run: run_20260320_162359</li>
-<li>Step1/GAlignments results directory:
-/home/runner/work/BamScale/BamScale/inst/benchmarks/run_20260320_133141</li>
-<li>SeqQual results directory:
-/home/runner/work/BamScale/BamScale/inst/benchmarks/run_20260320_162359</li>
-</ul>
+<p>On a single large BAM, BamScale reads <strong>2.3–3.2x
+faster</strong> than the standard reader across three representative
+access patterns, because it spreads the BGZF decode across cores:</p>
 <table class="table">
+<caption>Single-file read throughput: best BamScale configuration vs the
+single-threaded standard reader (median of 5 iterations).</caption>
 <colgroup>
-<col width="15%">
-<col width="14%">
-<col width="6%">
-<col width="31%">
-<col width="10%">
-<col width="6%">
-<col width="13%">
-</colgroup>
-<thead><tr class="header">
-<th align="left">Run</th>
-<th align="left">Workloads</th>
-<th align="left">Profile</th>
-<th align="left">CPU</th>
-<th align="right">Logical cores</th>
-<th align="right">RAM (GB)</th>
-<th align="right">Successful cases</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">run_20260320_133141</td>
-<td align="left">step1, galignments</td>
-<td align="left">balanced</td>
-<td align="left">Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz</td>
-<td align="right">96</td>
-<td align="right">723.6</td>
-<td align="right">32</td>
-</tr>
-<tr class="even">
-<td align="left">run_20260320_162359</td>
-<td align="left">seqqual</td>
-<td align="left">balanced</td>
-<td align="left">Intel(R) Xeon(R) Gold 6252 CPU @ 2.10GHz</td>
-<td align="right">96</td>
-<td align="right">723.6</td>
-<td align="right">26</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level2">
-<h2 id="methods-rationale">Methods Rationale<a class="anchor" aria-label="anchor" href="#methods-rationale"></a>
-</h2>
-<p>This benchmark suite covers three distinct access patterns:</p>
-<ul>
-<li>
-<code>step1</code>: alignment-metadata extraction without
-sequence/quality materialization. This is a good proxy for BAM
-filtering, fragment-length profiling, and fragment-distribution QC.</li>
-<li>
-<code>galignments</code>: construction of alignment objects suitable
-for Bioconductor workflows centered on
-<code>GenomicAlignments</code>.</li>
-<li>
-<code>seqqual</code>: full sequence and quality extraction. This is
-reported in two BamScale modes:
-<ul>
-<li>
-<code>fair</code> compatibility mode, which is the closest
-comparator to <code><a href="https://rdrr.io/pkg/Rsamtools/man/scanBam.html" class="external-link">Rsamtools::scanBam</a></code>
-</li>
-<li>
-<code>optimized</code> compact mode, which reduces internal overhead
-and should be interpreted as an optimized BamScale track rather than a
-strict apples-to-apples replacement for the compatibility path</li>
-</ul>
-</li>
-</ul>
-<p>Across all runs, the benchmark design emphasizes:</p>
-<ul>
-<li>deterministic case order</li>
-<li>balanced BamScale worker/thread plans</li>
-<li>explicit comparator baselines</li>
-<li>single-file and multi-file reporting</li>
-<li>fixed 48-thread budget for multi-file plans</li>
-</ul>
-</div>
-<div class="section level2">
-<h2 id="input-files">Input Files<a class="anchor" aria-label="anchor" href="#input-files"></a>
-</h2>
-<p>The same underlying four selected BAMs were used for both runs, with
-repeated files allowed to populate the 12-file multi-file benchmark
-set.</p>
-<table class="table">
-<colgroup>
-<col width="44%">
-<col width="10%">
-<col width="15%">
-<col width="14%">
-<col width="6%">
-<col width="7%">
-</colgroup>
-<thead><tr class="header">
-<th align="left">file</th>
-<th align="left">source</th>
-<th align="left">selected_for_single</th>
-<th align="left">selected_for_multi</th>
-<th align="right">size_mb</th>
-<th align="left">has_index</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab745547e62_2073</td>
-<td align="left">chipseqDBData</td>
-<td align="left">TRUE</td>
-<td align="left">TRUE</td>
-<td align="right">548.3</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="even">
-<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab7270c5da5_2072</td>
-<td align="left">chipseqDBData</td>
-<td align="left">FALSE</td>
-<td align="left">TRUE</td>
-<td align="right">320.4</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="odd">
-<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab721bfa655_2071</td>
-<td align="left">chipseqDBData</td>
-<td align="left">FALSE</td>
-<td align="left">TRUE</td>
-<td align="right">305.2</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="even">
-<td align="left">/home/chiragp/.cache/R/ExperimentHub/134ab7231ef47d_2074</td>
-<td align="left">chipseqDBData</td>
-<td align="left">FALSE</td>
-<td align="left">TRUE</td>
-<td align="right">227.3</td>
-<td align="left">TRUE</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level2">
-<h2 id="reference-counts">Reference Counts<a class="anchor" aria-label="anchor" href="#reference-counts"></a>
-</h2>
-<table style="width:100%;" class="table">
-<colgroup>
-<col width="29%">
-<col width="13%">
-<col width="17%">
-<col width="11%">
-<col width="14%">
-<col width="13%">
-</colgroup>
-<thead><tr class="header">
-<th align="left">run</th>
-<th align="left">scenario</th>
-<th align="left">workload</th>
-<th align="right">n_files</th>
-<th align="right">n_records</th>
-<th align="right">total_mb</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">run_20260320_133141</td>
-<td align="left">multi</td>
-<td align="left">galignments</td>
-<td align="right">12</td>
-<td align="right">77543925</td>
-<td align="right">4203.4</td>
-</tr>
-<tr class="even">
-<td align="left">run_20260320_133141</td>
-<td align="left">multi</td>
-<td align="left">step1</td>
-<td align="right">12</td>
-<td align="right">132482148</td>
-<td align="right">4203.4</td>
-</tr>
-<tr class="odd">
-<td align="left">run_20260320_133141</td>
-<td align="left">single</td>
-<td align="left">galignments</td>
-<td align="right">1</td>
-<td align="right">4670364</td>
-<td align="right">548.3</td>
-</tr>
-<tr class="even">
-<td align="left">run_20260320_133141</td>
-<td align="left">single</td>
-<td align="left">step1</td>
-<td align="right">1</td>
-<td align="right">16675372</td>
-<td align="right">548.3</td>
-</tr>
-<tr class="odd">
-<td align="left">run_20260320_162359</td>
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="right">12</td>
-<td align="right">132482148</td>
-<td align="right">4203.4</td>
-</tr>
-<tr class="even">
-<td align="left">run_20260320_162359</td>
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="right">1</td>
-<td align="right">16675372</td>
-<td align="right">548.3</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level2">
-<h2 id="best-observed-summary">Best-Observed Summary<a class="anchor" aria-label="anchor" href="#best-observed-summary"></a>
-</h2>
-<table style="width:100%;" class="table">
-<colgroup>
-<col width="7%">
-<col width="10%">
-<col width="8%">
-<col width="15%">
-<col width="41%">
-<col width="4%">
-<col width="13%">
-</colgroup>
-<thead><tr class="header">
-<th align="left">Scenario</th>
-<th align="left">Workload</th>
-<th align="left">Track</th>
-<th align="left">Method family</th>
-<th align="left">Method</th>
-<th align="left">Plan</th>
-<th align="right">Median time (s)</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">galignments</td>
-<td align="left">fair</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale (balanced budget)</td>
-<td align="left">1x48</td>
-<td align="right">61.204</td>
-</tr>
-<tr class="even">
-<td align="left">multi</td>
-<td align="left">galignments</td>
-<td align="left">fair</td>
-<td align="left">GenomicAlignments</td>
-<td align="left">GenomicAlignments::readGAlignments + BiocParallel</td>
-<td align="left">12x1</td>
-<td align="right">90.777</td>
-</tr>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">fair</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale (balanced budget)</td>
-<td align="left">1x48</td>
-<td align="right">181.277</td>
-</tr>
-<tr class="even">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam + BiocParallel</td>
-<td align="left">12x1</td>
-<td align="right">134.667</td>
-</tr>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">optimized</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale (compact seqqual budget)</td>
-<td align="left">12x4</td>
-<td align="right">175.451</td>
-</tr>
-<tr class="even">
-<td align="left">multi</td>
-<td align="left">step1</td>
-<td align="left">fair</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale (balanced budget)</td>
-<td align="left">1x48</td>
-<td align="right">68.469</td>
-</tr>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">step1</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam + BiocParallel</td>
-<td align="left">12x1</td>
-<td align="right">107.882</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">galignments</td>
-<td align="left">fair</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">4.047</td>
-</tr>
-<tr class="odd">
-<td align="left">single</td>
-<td align="left">galignments</td>
-<td align="left">fair</td>
-<td align="left">GenomicAlignments</td>
-<td align="left">GenomicAlignments::readGAlignments</td>
-<td align="left">1x1</td>
-<td align="right">10.568</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">fair</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">26.295</td>
-</tr>
-<tr class="odd">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam</td>
-<td align="left">1x1</td>
-<td align="right">24.327</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">optimized</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale (compact seqqual)</td>
-<td align="left">1x48</td>
-<td align="right">15.026</td>
-</tr>
-<tr class="odd">
-<td align="left">single</td>
-<td align="left">step1</td>
-<td align="left">fair</td>
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">8.035</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">step1</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam</td>
-<td align="left">1x1</td>
-<td align="right">15.403</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level2">
-<h2 id="bamscale-versus-comparator-fold-change">BamScale-versus-Comparator Fold Change<a class="anchor" aria-label="anchor" href="#bamscale-versus-comparator-fold-change"></a>
-</h2>
-<table class="table">
-<colgroup>
-<col width="3%">
-<col width="5%">
-<col width="4%">
-<col width="7%">
 <col width="20%">
-<col width="6%">
+<col width="34%">
+<col width="13%">
+<col width="13%">
 <col width="8%">
-<col width="14%">
-<col width="5%">
-<col width="7%">
 <col width="8%">
-<col width="7%">
 </colgroup>
 <thead><tr class="header">
-<th align="left">Scenario</th>
 <th align="left">Workload</th>
-<th align="left">Track</th>
-<th align="left">Comparator family</th>
-<th align="left">Comparator method</th>
-<th align="left">Comparator plan</th>
-<th align="right">Comparator time (s)</th>
-<th align="left">BamScale method</th>
-<th align="left">BamScale plan</th>
-<th align="right">BamScale time (s)</th>
-<th align="right">Comparator/BamScale</th>
-<th align="right">BamScale % faster</th>
+<th align="left">Reads</th>
+<th align="right">Standard (s)</th>
+<th align="right">BamScale (s)</th>
+<th align="right">Threads</th>
+<th align="left">Speedup</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td align="left">single</td>
-<td align="left">galignments</td>
-<td align="left">fair</td>
-<td align="left">GenomicAlignments</td>
-<td align="left">GenomicAlignments::readGAlignments</td>
-<td align="left">1x1</td>
-<td align="right">10.568</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">4.047</td>
-<td align="right">2.611</td>
-<td align="right">61.705</td>
+<td align="left">Core fields</td>
+<td align="left">qname/flag/rname/pos/mapq/cigar</td>
+<td align="right">15.6</td>
+<td align="right">6.8</td>
+<td align="right">48</td>
+<td align="left">2.29x</td>
 </tr>
 <tr class="even">
-<td align="left">single</td>
-<td align="left">step1</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam</td>
-<td align="left">1x1</td>
-<td align="right">15.403</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">8.035</td>
-<td align="right">1.917</td>
-<td align="right">47.835</td>
+<td align="left">GAlignments</td>
+<td align="left">-&gt; GAlignments object</td>
+<td align="right">10.9</td>
+<td align="right">3.4</td>
+<td align="right">48</td>
+<td align="left">3.22x</td>
 </tr>
 <tr class="odd">
-<td align="left">multi</td>
-<td align="left">galignments</td>
-<td align="left">fair</td>
-<td align="left">GenomicAlignments</td>
-<td align="left">GenomicAlignments::readGAlignments + BiocParallel</td>
-<td align="left">12x1</td>
-<td align="right">90.777</td>
-<td align="left">BamScale (balanced budget)</td>
-<td align="left">1x48</td>
-<td align="right">61.204</td>
-<td align="right">1.483</td>
-<td align="right">32.578</td>
-</tr>
-<tr class="even">
-<td align="left">multi</td>
-<td align="left">step1</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam + BiocParallel</td>
-<td align="left">12x1</td>
-<td align="right">107.882</td>
-<td align="left">BamScale (balanced budget)</td>
-<td align="left">1x48</td>
-<td align="right">68.469</td>
-<td align="right">1.576</td>
-<td align="right">36.534</td>
-</tr>
-<tr class="odd">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam</td>
-<td align="left">1x1</td>
-<td align="right">24.327</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">26.295</td>
-<td align="right">0.925</td>
-<td align="right">-8.088</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">optimized</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam</td>
-<td align="left">1x1</td>
-<td align="right">24.327</td>
-<td align="left">BamScale (compact seqqual)</td>
-<td align="left">1x48</td>
-<td align="right">15.026</td>
-<td align="right">1.619</td>
-<td align="right">38.232</td>
-</tr>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">fair</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam + BiocParallel</td>
-<td align="left">12x1</td>
-<td align="right">134.667</td>
-<td align="left">BamScale (balanced budget)</td>
-<td align="left">1x48</td>
-<td align="right">181.277</td>
-<td align="right">0.743</td>
-<td align="right">-34.611</td>
-</tr>
-<tr class="even">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">optimized</td>
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam + BiocParallel</td>
-<td align="left">12x1</td>
-<td align="right">134.667</td>
-<td align="left">BamScale (compact seqqual budget)</td>
-<td align="left">12x4</td>
-<td align="right">175.451</td>
-<td align="right">0.768</td>
-<td align="right">-30.285</td>
+<td align="left">Sequence + quality</td>
+<td align="left">seq + base quality</td>
+<td align="right">22.3</td>
+<td align="right">8.1</td>
+<td align="right">24</td>
+<td align="left">2.76x</td>
 </tr>
 </tbody>
 </table>
-<p><img src="benchmark-results_files/figure-html/fold-change-plot-1.png" class="r-plt" alt="" width="864"></p>
+<p><img src="benchmark-results_files/figure-html/read-plot-1.png" class="r-plt" alt="" width="840"></p>
+<p>Two honest points. At <strong>one thread</strong> BamScale is at or
+near the single-threaded readers (the win comes from threading, not a
+faster single-core path), and the scaling is <strong>strongly
+sublinear</strong> – roughly 2–3x on 48 threads, saturating by about 24
+threads. The value is not near-linear scaling but the ability to use
+cores that a single-threaded reader cannot use at all – as on one large
+BAM in an interactive session. Object-free command-line decoders such as
+<code>samtools</code> reach several-fold higher <em>raw</em> throughput,
+but return no Bioconductor object; BamScale’s role is fast,
+object-faithful decoding <em>inside</em> R.</p>
 </div>
 <div class="section level2">
-<h2 id="single-file-step1">Single-File <code>step1</code><a class="anchor" aria-label="anchor" href="#single-file-step1"></a>
+<h2 id="end-to-end-impact-tracks-the-read-fraction">End-to-end impact tracks the read fraction<a class="anchor" aria-label="anchor" href="#end-to-end-impact-tracks-the-read-fraction"></a>
 </h2>
-<p><img src="benchmark-results_files/figure-html/step1-single-plot-1.png" class="r-plt" alt="" width="720"></p>
+<p>Embedding BamScale as the read step of a complete workflow, the
+end-to-end speedup follows how read-dominated that workflow is (Amdahl’s
+law):</p>
 <table class="table">
+<caption>End-to-end speedup by workload endpoint. Read-pattern rows are
+single-file read throughput; workflow rows are end-to-end. Read fraction
+is the share of the standard pipeline spent reading.</caption>
 <thead><tr class="header">
-<th align="left">Method family</th>
-<th align="left">Method</th>
-<th align="left">Plan</th>
-<th align="right">Median time (s)</th>
+<th align="left">Endpoint</th>
+<th align="left">Layer</th>
+<th align="left">Read fraction</th>
+<th align="left">Speedup</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">8.0350</td>
+<td align="left">ATAC fragment-size QC</td>
+<td align="left">workflow</td>
+<td align="left">93%</td>
+<td align="left">3.66x</td>
 </tr>
 <tr class="even">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x24</td>
-<td align="right">8.9795</td>
+<td align="left">GAlignments (read)</td>
+<td align="left">read</td>
+<td align="left">100%</td>
+<td align="left">3.22x</td>
 </tr>
 <tr class="odd">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x12</td>
-<td align="right">9.3775</td>
+<td align="left">Sequence + quality (read)</td>
+<td align="left">read</td>
+<td align="left">100%</td>
+<td align="left">2.76x</td>
 </tr>
 <tr class="even">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x4</td>
-<td align="right">11.0565</td>
+<td align="left">Coverage -&gt; RleList</td>
+<td align="left">workflow</td>
+<td align="left">76%</td>
+<td align="left">2.50x</td>
 </tr>
 <tr class="odd">
-<td align="left">Rsamtools</td>
-<td align="left">Rsamtools::scanBam</td>
-<td align="left">1x1</td>
-<td align="right">15.4030</td>
+<td align="left">Core fields (read)</td>
+<td align="left">read</td>
+<td align="left">100%</td>
+<td align="left">2.29x</td>
 </tr>
 <tr class="even">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x1</td>
-<td align="right">16.3500</td>
+<td align="left">Coverage -&gt; bigWig</td>
+<td align="left">workflow</td>
+<td align="left">21%</td>
+<td align="left">1.23x</td>
 </tr>
 </tbody>
 </table>
-</div>
-<div class="section level2">
-<h2 id="single-file-galignments">Single-File <code>galignments</code><a class="anchor" aria-label="anchor" href="#single-file-galignments"></a>
-</h2>
-<p><img src="benchmark-results_files/figure-html/galignments-single-plot-1.png" class="r-plt" alt="" width="720"></p>
-<table class="table">
-<colgroup>
-<col width="24%">
-<col width="47%">
-<col width="6%">
-<col width="21%">
-</colgroup>
-<thead><tr class="header">
-<th align="left">Method family</th>
-<th align="left">Method</th>
-<th align="left">Plan</th>
-<th align="right">Median time (s)</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x48</td>
-<td align="right">4.0470</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x24</td>
-<td align="right">4.1920</td>
-</tr>
-<tr class="odd">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x12</td>
-<td align="right">4.7585</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x4</td>
-<td align="right">6.6230</td>
-</tr>
-<tr class="odd">
-<td align="left">GenomicAlignments</td>
-<td align="left">GenomicAlignments::readGAlignments</td>
-<td align="left">1x1</td>
-<td align="right">10.5680</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale</td>
-<td align="left">BamScale</td>
-<td align="left">1x1</td>
-<td align="right">11.0405</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level2">
-<h2 id="multi-file-step1">Multi-File <code>step1</code><a class="anchor" aria-label="anchor" href="#multi-file-step1"></a>
-</h2>
-<p><img src="benchmark-results_files/figure-html/step1-multi-plot-1.png" class="r-plt" alt="" width="720"></p>
-</div>
-<div class="section level2">
-<h2 id="multi-file-galignments">Multi-File <code>galignments</code><a class="anchor" aria-label="anchor" href="#multi-file-galignments"></a>
-</h2>
-<p><img src="benchmark-results_files/figure-html/galignments-multi-plot-1.png" class="r-plt" alt="" width="720"></p>
-</div>
-<div class="section level2">
-<h2 id="single-file-seqqual">Single-File <code>seqqual</code><a class="anchor" aria-label="anchor" href="#single-file-seqqual"></a>
-</h2>
-<p><img src="benchmark-results_files/figure-html/seqqual-single-plot-1.png" class="r-plt" alt="" width="768"></p>
-<table class="table">
-<thead><tr class="header">
-<th align="left">Method</th>
-<th align="left">Plan</th>
-<th align="right">Median time (s)</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">BamScale (compact)</td>
-<td align="left">1x48</td>
-<td align="right">15.0265</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale (compact)</td>
-<td align="left">1x24</td>
-<td align="right">16.4440</td>
-</tr>
-<tr class="odd">
-<td align="left">BamScale (compact)</td>
-<td align="left">1x12</td>
-<td align="right">17.0985</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale (compact)</td>
-<td align="left">1x4</td>
-<td align="right">19.8780</td>
-</tr>
-<tr class="odd">
-<td align="left">Rsamtools::scanBam</td>
-<td align="left">1x1</td>
-<td align="right">24.3275</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale (compact)</td>
-<td align="left">1x1</td>
-<td align="right">25.5300</td>
-</tr>
-<tr class="odd">
-<td align="left">BamScale (compatible)</td>
-<td align="left">1x48</td>
-<td align="right">26.2950</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale (compatible)</td>
-<td align="left">1x12</td>
-<td align="right">27.6200</td>
-</tr>
-<tr class="odd">
-<td align="left">BamScale (compatible)</td>
-<td align="left">1x24</td>
-<td align="right">28.3390</td>
-</tr>
-<tr class="even">
-<td align="left">BamScale (compatible)</td>
-<td align="left">1x4</td>
-<td align="right">31.6780</td>
-</tr>
-<tr class="odd">
-<td align="left">BamScale (compatible)</td>
-<td align="left">1x1</td>
-<td align="right">35.6830</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level2">
-<h2 id="multi-file-seqqual">Multi-File <code>seqqual</code><a class="anchor" aria-label="anchor" href="#multi-file-seqqual"></a>
-</h2>
-<p><img src="benchmark-results_files/figure-html/seqqual-multi-plot-1.png" class="r-plt" alt="" width="768"></p>
-</div>
-<div class="section level2">
-<h2 id="compact-versus-compatible-seqqual">Compact-versus-Compatible <code>seqqual</code><a class="anchor" aria-label="anchor" href="#compact-versus-compatible-seqqual"></a>
-</h2>
-<table class="table">
-<colgroup>
-<col width="11%">
-<col width="11%">
-<col width="6%">
-<col width="25%">
-<col width="21%">
-<col width="24%">
-</colgroup>
-<thead><tr class="header">
-<th align="left">Scenario</th>
-<th align="left">Workload</th>
-<th align="left">Plan</th>
-<th align="right">Compatible time (s)</th>
-<th align="right">Compact time (s)</th>
-<th align="right">Compatible/Compact</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">1x48</td>
-<td align="right">181.277</td>
-<td align="right">186.321</td>
-<td align="right">0.973</td>
-</tr>
-<tr class="even">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">2x24</td>
-<td align="right">573.752</td>
-<td align="right">337.596</td>
-<td align="right">1.700</td>
-</tr>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">4x12</td>
-<td align="right">404.183</td>
-<td align="right">241.524</td>
-<td align="right">1.673</td>
-</tr>
-<tr class="even">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">8x6</td>
-<td align="right">361.750</td>
-<td align="right">210.290</td>
-<td align="right">1.720</td>
-</tr>
-<tr class="odd">
-<td align="left">multi</td>
-<td align="left">seqqual</td>
-<td align="left">12x4</td>
-<td align="right">270.889</td>
-<td align="right">175.451</td>
-<td align="right">1.544</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">1x1</td>
-<td align="right">35.683</td>
-<td align="right">25.530</td>
-<td align="right">1.398</td>
-</tr>
-<tr class="odd">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">1x4</td>
-<td align="right">31.678</td>
-<td align="right">19.878</td>
-<td align="right">1.594</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">1x12</td>
-<td align="right">27.620</td>
-<td align="right">17.098</td>
-<td align="right">1.615</td>
-</tr>
-<tr class="odd">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">1x24</td>
-<td align="right">28.339</td>
-<td align="right">16.444</td>
-<td align="right">1.723</td>
-</tr>
-<tr class="even">
-<td align="left">single</td>
-<td align="left">seqqual</td>
-<td align="left">1x48</td>
-<td align="right">26.295</td>
-<td align="right">15.026</td>
-<td align="right">1.750</td>
-</tr>
-</tbody>
-</table>
-<p><img src="benchmark-results_files/figure-html/compact-gain-plot-1.png" class="r-plt" alt="" width="720"></p>
-</div>
-<div class="section level2">
-<h2 id="interpretation">Interpretation<a class="anchor" aria-label="anchor" href="#interpretation"></a>
-</h2>
-<p>The benchmark shows a consistent pattern across the final runs:</p>
+<p><img src="benchmark-results_files/figure-html/spectrum-plot-1.png" class="r-plt" alt="" width="840"></p>
 <ul>
 <li>
-<code>step1</code> and <code>galignments</code> are the strongest
-BamScale workloads.</li>
-<li>For these workloads, the best BamScale plans are usually low-worker,
-high-thread configurations, indicating that within-file multithreading
-contributes more than aggressively increasing the number of file
-workers.</li>
+<strong>ATAC fragment-size QC</strong> is nearly pure read, so
+BamScale’s read speedup carries through almost intact:
+<strong>3.66x</strong> end-to-end.</li>
 <li>
-<code>Seqqual</code> is more difficult because sequence and quality
-extraction amplifies output-construction overhead.</li>
-<li>BamScale compact mode narrows this gap substantially and produces
-the strongest single-file <code>seqqual</code> result, but the best
-multi-file <code>seqqual</code> comparator remains faster.</li>
-</ul>
-<p>In practical terms, these results support the following guidance:</p>
-<ul>
-<li>use BamScale when metadata extraction or alignment-object
-construction is a bottleneck in BAM-heavy Bioconductor workflows</li>
-<li>favor low-worker, high-thread plans when traversing one or a small
-number of large BAM files</li>
-<li>interpret compact <code>seqqual</code> as an optimized throughput
-path rather than as a strict compatibility benchmark</li>
+<strong>Coverage -&gt; bigWig</strong> is dominated by the shared,
+single-threaded bigWig writer (identical work on both arms), so the
+end-to-end gain is bounded at <strong>1.23x</strong> even though the
+read phase itself is much faster. Stopping at the in-memory coverage
+<code>RleList</code> – what many analyses consume next – recovers a
+<strong>2.50x</strong> gain.</li>
 </ul>
 </div>
 <div class="section level2">
-<h2 id="session-information">Session Information<a class="anchor" aria-label="anchor" href="#session-information"></a>
+<h2 id="a-note-on-cores-and-fairness">A note on cores and fairness<a class="anchor" aria-label="anchor" href="#a-note-on-cores-and-fairness"></a>
 </h2>
-<pre><code><span><span class="co">## R version 4.6.0 (2026-04-24)</span></span>
+<p>A multithreaded reader can occupy cores a single-threaded one cannot.
+At <strong>matched core counts</strong> (both arms given the same number
+of cores) the two readers are approximately at parity for multi-file
+processing (coverage ~1.10x, ATAC ~0.96x): the single-threaded reader
+already saturates a machine by parallelising <em>across</em> files, so
+BamScale’s multi-file advantage comes specifically from also threading
+<em>within</em> a file – which pays off when there are fewer files than
+cores.</p>
+</div>
+<div class="section level2">
+<h2 id="output-is-identical-to-the-standard-tools">Output is identical to the standard tools<a class="anchor" aria-label="anchor" href="#output-is-identical-to-the-standard-tools"></a>
+</h2>
+<p>Every speedup above is against output verified equal to the standard
+tool. The coverage <code>RleList</code> is <code><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical()</a></code> to
+<code><a href="https://rdrr.io/pkg/IRanges/man/coverage-methods.html" class="external-link">GenomicAlignments::coverage()</a></code> on
+<code>readGAlignments</code> output at every thread count, and the ATAC
+fragment-size table is <code><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical()</a></code> to
+<code><a href="https://rdrr.io/pkg/Rsamtools/man/scanBam.html" class="external-link">Rsamtools::scanBam</a></code> and byte-identical (maximum absolute
+difference 0) to <code>ATACseqQC::fragSizeDist</code> over 49.8 million
+reads. This is what makes BamScale a genuine drop-in rather than an
+approximation.</p>
+</div>
+<div class="section level2">
+<h2 id="try-it">Try it<a class="anchor" aria-label="anchor" href="#try-it"></a>
+</h2>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://cparsania.github.io/BamScale/">BamScale</a></span><span class="op">)</span></span>
+<span><span class="va">bam</span> <span class="op">&lt;-</span> <span class="fu">ompBAM</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/ompBAM/man/example_BAM.html" class="external-link">example_BAM</a></span><span class="op">(</span><span class="st">"Unsorted"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co">## Alignment fields as a GAlignments object (drop-in for readGAlignments)</span></span>
+<span><span class="va">ga</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/bam_read.html">bam_read</a></span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"rname"</span>, <span class="st">"pos"</span>, <span class="st">"cigar"</span>, <span class="st">"strand"</span><span class="op">)</span>,</span>
+<span>               as <span class="op">=</span> <span class="st">"GAlignments"</span>, threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="va">ga</span></span></code></pre></div>
+<pre><code><span><span class="co">## GAlignments object with 10000 alignments and 0 metadata columns:</span></span>
+<span><span class="co">##           seqnames strand              cigar    qwidth     start       end</span></span>
+<span><span class="co">##              &lt;Rle&gt;  &lt;Rle&gt;        &lt;character&gt; &lt;integer&gt; &lt;integer&gt; &lt;integer&gt;</span></span>
+<span><span class="co">##       [1]       19      +      1S88M6798N61M       150    572614    579560</span></span>
+<span><span class="co">##       [2]       19      -           1S148M1S       150    579499    579646</span></span>
+<span><span class="co">##       [3]        6      +           60S86M4S       150  44252112  44252197</span></span>
+<span><span class="co">##       [4]        6      -           1S146M3S       150  44252124  44252269</span></span>
+<span><span class="co">##       [5]       12      +             1S149M       150  46185884  46186032</span></span>
+<span><span class="co">##       ...      ...    ...                ...       ...       ...       ...</span></span>
+<span><span class="co">##    [9996]        2      -         16S122M12S       150 186680457 186680578</span></span>
+<span><span class="co">##    [9997]       15      +           4S143M3S       150  90501177  90501319</span></span>
+<span><span class="co">##    [9998]       15      -        26M2I56M66S       150  90501301  90501382</span></span>
+<span><span class="co">##    [9999]        4      + 3M336N95M752N51M1S       150 121801488 121802724</span></span>
+<span><span class="co">##   [10000]        4      -      1S117M121N32M       150 121802677 121802946</span></span>
+<span><span class="co">##               width     njunc</span></span>
+<span><span class="co">##           &lt;integer&gt; &lt;integer&gt;</span></span>
+<span><span class="co">##       [1]      6947         1</span></span>
+<span><span class="co">##       [2]       148         0</span></span>
+<span><span class="co">##       [3]        86         0</span></span>
+<span><span class="co">##       [4]       146         0</span></span>
+<span><span class="co">##       [5]       149         0</span></span>
+<span><span class="co">##       ...       ...       ...</span></span>
+<span><span class="co">##    [9996]       122         0</span></span>
+<span><span class="co">##    [9997]       143         0</span></span>
+<span><span class="co">##    [9998]        82         0</span></span>
+<span><span class="co">##    [9999]      1237         2</span></span>
+<span><span class="co">##   [10000]       270         1</span></span>
+<span><span class="co">##   -------</span></span>
+<span><span class="co">##   seqinfo: 25 sequences from an unspecified genome</span></span></code></pre>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co">## ...or core fields as a data.frame; `threads` controls within-file parallelism</span></span>
+<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/bam_read.html">bam_read</a></span><span class="op">(</span><span class="va">bam</span>, what <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"qname"</span>, <span class="st">"flag"</span>, <span class="st">"mapq"</span><span class="op">)</span>,</span>
+<span>               as <span class="op">=</span> <span class="st">"data.frame"</span>, threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">##                                       qname flag mapq</span></span>
+<span><span class="co">## 1  ST-E00600:137:H77Y3CCXY:1:1101:6837:1309  163  255</span></span>
+<span><span class="co">## 2  ST-E00600:137:H77Y3CCXY:1:1101:6837:1309   83  255</span></span>
+<span><span class="co">## 3 ST-E00600:137:H77Y3CCXY:1:1101:10450:1309  163  255</span></span>
+<span><span class="co">## 4 ST-E00600:137:H77Y3CCXY:1:1101:10450:1309   83  255</span></span>
+<span><span class="co">## 5 ST-E00600:137:H77Y3CCXY:1:1101:15077:1309   99  255</span></span>
+<span><span class="co">## 6 ST-E00600:137:H77Y3CCXY:1:1101:15077:1309  147  255</span></span></code></pre>
+</div>
+<div class="section level2">
+<h2 id="reproducing-the-full-benchmarks">Reproducing the full benchmarks<a class="anchor" aria-label="anchor" href="#reproducing-the-full-benchmarks"></a>
+</h2>
+<p>The complete benchmark harness ships under
+<code>inst/benchmarks/</code>:</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/list.files.html" class="external-link">dir</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"benchmarks"</span>, package <span class="op">=</span> <span class="st">"BamScale"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co"># run_server_benchmark.R      : read-pattern micro-benchmarks (step1 / GAlignments / seq+qual)</span></span>
+<span><span class="co"># run_workflow_benchmark.R    : end-to-end coverage and ATAC fragment-size QC workflows</span></span>
+<span><span class="co"># download_atac_data.R        : fetch + index the ENCODE GM12878 ATAC BAMs used here</span></span></code></pre></div>
+<p>Each writes machine-readable result tables (<code>summary.csv</code>)
+plus host and correctness metadata, from which the summary figures above
+are derived.</p>
+</div>
+<div class="section level2">
+<h2 id="session-information">Session information<a class="anchor" aria-label="anchor" href="#session-information"></a>
+</h2>
+<pre><code><span><span class="co">## R version 4.6.1 (2026-06-24)</span></span>
 <span><span class="co">## Platform: x86_64-pc-linux-gnu</span></span>
 <span><span class="co">## Running under: Ubuntu 24.04.4 LTS</span></span>
 <span><span class="co">## </span></span>
@@ -964,27 +343,47 @@ path rather than as a strict compatibility benchmark</li>
 <span><span class="co">## [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span><span class="co">## </span></span>
 <span><span class="co">## other attached packages:</span></span>
-<span><span class="co">## [1] scales_1.4.0     ggplot2_4.0.3    tidyr_1.3.2      dplyr_1.2.1     </span></span>
-<span><span class="co">## [5] readr_2.2.0      BiocStyle_2.40.0</span></span>
+<span><span class="co">## [1] BamScale_0.99.12 ggplot2_4.0.3    BiocStyle_2.40.0</span></span>
 <span><span class="co">## </span></span>
 <span><span class="co">## loaded via a namespace (and not attached):</span></span>
-<span><span class="co">##  [1] bit_4.6.0           gtable_0.3.6        jsonlite_2.0.0     </span></span>
-<span><span class="co">##  [4] crayon_1.5.3        compiler_4.6.0      BiocManager_1.30.27</span></span>
-<span><span class="co">##  [7] tidyselect_1.2.1    parallel_4.6.0      jquerylib_0.1.4    </span></span>
-<span><span class="co">## [10] systemfonts_1.3.2   textshaping_1.0.5   yaml_2.3.12        </span></span>
-<span><span class="co">## [13] fastmap_1.2.0       R6_2.6.1            labeling_0.4.3     </span></span>
-<span><span class="co">## [16] generics_0.1.4      knitr_1.51          tibble_3.3.1       </span></span>
-<span><span class="co">## [19] bookdown_0.46       desc_1.4.3          RColorBrewer_1.1-3 </span></span>
-<span><span class="co">## [22] bslib_0.11.0        pillar_1.11.1       tzdb_0.5.0         </span></span>
-<span><span class="co">## [25] rlang_1.2.0         cachem_1.1.0        xfun_0.57          </span></span>
-<span><span class="co">## [28] S7_0.2.2            fs_2.1.0            sass_0.4.10        </span></span>
-<span><span class="co">## [31] bit64_4.8.2         cli_3.6.6           withr_3.0.2        </span></span>
-<span><span class="co">## [34] pkgdown_2.2.0       magrittr_2.0.5      digest_0.6.39      </span></span>
-<span><span class="co">## [37] grid_4.6.0          vroom_1.7.1         hms_1.1.4          </span></span>
-<span><span class="co">## [40] lifecycle_1.0.5     vctrs_0.7.3         evaluate_1.0.5     </span></span>
-<span><span class="co">## [43] glue_1.8.1          farver_2.1.2        ragg_1.5.2         </span></span>
-<span><span class="co">## [46] rmarkdown_2.31      purrr_1.2.2         tools_4.6.0        </span></span>
-<span><span class="co">## [49] pkgconfig_2.0.3     htmltools_0.5.9</span></span></code></pre>
+<span><span class="co">##  [1] SummarizedExperiment_1.42.0 gtable_0.3.6               </span></span>
+<span><span class="co">##  [3] xfun_0.60                   bslib_0.11.0               </span></span>
+<span><span class="co">##  [5] Biobase_2.72.0              lattice_0.22-9             </span></span>
+<span><span class="co">##  [7] vctrs_0.7.3                 tools_4.6.1                </span></span>
+<span><span class="co">##  [9] bitops_1.0-9                generics_0.1.4             </span></span>
+<span><span class="co">## [11] stats4_4.6.1                parallel_4.6.1             </span></span>
+<span><span class="co">## [13] tibble_3.3.1                pkgconfig_2.0.3            </span></span>
+<span><span class="co">## [15] Matrix_1.7-5                RColorBrewer_1.1-3         </span></span>
+<span><span class="co">## [17] S7_0.2.2                    desc_1.4.3                 </span></span>
+<span><span class="co">## [19] S4Vectors_0.50.1            cigarillo_1.2.1            </span></span>
+<span><span class="co">## [21] lifecycle_1.0.5             compiler_4.6.1             </span></span>
+<span><span class="co">## [23] farver_2.1.2                Rsamtools_2.28.0           </span></span>
+<span><span class="co">## [25] textshaping_1.0.5           Biostrings_2.80.1          </span></span>
+<span><span class="co">## [27] Seqinfo_1.2.0               codetools_0.2-20           </span></span>
+<span><span class="co">## [29] GenomeInfoDb_1.48.0         htmltools_0.5.9            </span></span>
+<span><span class="co">## [31] sass_0.4.10                 yaml_2.3.12                </span></span>
+<span><span class="co">## [33] pillar_1.11.1               pkgdown_2.2.1              </span></span>
+<span><span class="co">## [35] crayon_1.5.3                jquerylib_0.1.4            </span></span>
+<span><span class="co">## [37] BiocParallel_1.46.0         cachem_1.1.0               </span></span>
+<span><span class="co">## [39] DelayedArray_0.38.2         abind_1.4-8                </span></span>
+<span><span class="co">## [41] ompBAM_1.16.0               tidyselect_1.2.1           </span></span>
+<span><span class="co">## [43] digest_0.6.39               dplyr_1.2.1                </span></span>
+<span><span class="co">## [45] bookdown_0.47               labeling_0.4.3             </span></span>
+<span><span class="co">## [47] fastmap_1.2.0               grid_4.6.1                 </span></span>
+<span><span class="co">## [49] cli_3.6.6                   SparseArray_1.12.2         </span></span>
+<span><span class="co">## [51] magrittr_2.0.5              S4Arrays_1.12.0            </span></span>
+<span><span class="co">## [53] withr_3.0.3                 UCSC.utils_1.8.0           </span></span>
+<span><span class="co">## [55] scales_1.4.0                httr_1.4.8                 </span></span>
+<span><span class="co">## [57] rmarkdown_2.31              XVector_0.52.0             </span></span>
+<span><span class="co">## [59] matrixStats_1.5.0           otel_0.2.0                 </span></span>
+<span><span class="co">## [61] ragg_1.5.2                  evaluate_1.0.5             </span></span>
+<span><span class="co">## [63] knitr_1.51                  GenomicRanges_1.64.0       </span></span>
+<span><span class="co">## [65] IRanges_2.46.0              rlang_1.3.0                </span></span>
+<span><span class="co">## [67] Rcpp_1.1.2                  glue_1.8.1                 </span></span>
+<span><span class="co">## [69] BiocManager_1.30.27         BiocGenerics_0.58.1        </span></span>
+<span><span class="co">## [71] jsonlite_2.0.0              R6_2.6.1                   </span></span>
+<span><span class="co">## [73] MatrixGenerics_1.24.0       GenomicAlignments_1.48.0   </span></span>
+<span><span class="co">## [75] systemfonts_1.3.2           fs_2.1.0</span></span></code></pre>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
@@ -997,7 +396,7 @@ path rather than as a strict compatibility benchmark</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

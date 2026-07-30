@@ -25,7 +25,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.10</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.12</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -41,7 +41,7 @@
 <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Articles</h6></li>
     <li><a class="dropdown-item" href="../articles/BamScale-intro.html">Getting started with BamScale</a></li>
-    <li><a class="dropdown-item" href="../articles/benchmark-results.html">Benchmarking BamScale Across Step1, GAlignments, and SeqQual Workloads</a></li>
+    <li><a class="dropdown-item" href="../articles/benchmark-results.html">Benchmarking BamScale: reader throughput and end-to-end workflow impact</a></li>
   </ul>
 </li>
       </ul>
@@ -214,7 +214,7 @@ objects, <code><a href="../reference/bam_read.html">bam_read()</a></code> can re
 <span><span class="co">#&gt;    [9999]      1237         2 | ST-E00600:137:H77Y3C..       163</span></span>
 <span><span class="co">#&gt;   [10000]       270         1 | ST-E00600:137:H77Y3C..        83</span></span>
 <span><span class="co">#&gt;   -------</span></span>
-<span><span class="co">#&gt;   seqinfo: 25 sequences from an unspecified genome; no seqlengths</span></span></code></pre></div>
+<span><span class="co">#&gt;   seqinfo: 25 sequences from an unspecified genome</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="sequence-and-quality-extraction">Sequence and quality extraction<a class="anchor" aria-label="anchor" href="#sequence-and-quality-extraction"></a>
@@ -232,6 +232,8 @@ mode.</p>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">seqqual_compatible</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning in format.data.frame(if (omit) x[seq_len(n0), , drop = FALSE] else x, :</span></span>
+<span><span class="co">#&gt; corrupt data frame: columns will be truncated or padded with NAs</span></span>
 <span><span class="co">#&gt;                                       qname</span></span>
 <span><span class="co">#&gt; 1  ST-E00600:137:H77Y3CCXY:1:1101:6837:1309</span></span>
 <span><span class="co">#&gt; 2  ST-E00600:137:H77Y3CCXY:1:1101:6837:1309</span></span>
@@ -239,20 +241,20 @@ mode.</p>
 <span><span class="co">#&gt; 4 ST-E00600:137:H77Y3CCXY:1:1101:10450:1309</span></span>
 <span><span class="co">#&gt; 5 ST-E00600:137:H77Y3CCXY:1:1101:15077:1309</span></span>
 <span><span class="co">#&gt; 6 ST-E00600:137:H77Y3CCXY:1:1101:15077:1309</span></span>
-<span><span class="co">#&gt;                                                                                                                                                      seq</span></span>
-<span><span class="co">#&gt; 1 NGACCGGCGAGGAATAGGAATCATGGCGGCTGCGCTGTTCGTGCTGCTGGGATTCGCGCTGCTGGGCACCCACGGAGCCTCCGGGGCTGCCGGCACAGTCTTCACTACCGTAGAAGACCTTGGCTCGAAGATACTCCTCACCTGCTCCTT</span></span>
-<span><span class="co">#&gt; 2 TGCCGGCACAGTCTTCACTACCGTAGAAGACCTTGGCTCCAAGATACTCCTCACCTGCTCCTTGAATGACAGCGCCACAGAGGTCACAGGGCACCGCTGGCTGAAGGCGGGCGTGGTGCTGAAGGAGGACGCGCTGCCAGGCCAGAAAAN</span></span>
-<span><span class="co">#&gt; 3 NGGAGCTTCGAGGTGGTATATATGACCGAGCCCATTAATGAGTACTGTGTGCAGCAGCGTAAGCAATTTGATGGGAAGAGCGTGGTCTCAGTTAGCAAGGAGGGTCTGGAGCTGCCTGAGGATGAGGAGGAGCTGAAGAAGATGGAGGAG</span></span>
-<span><span class="co">#&gt; 4 TGGGAAGAGCCTGGTCTCAGTTACCAAGGAGGGTCTGGAGCTGCCTGAGGATGAGTAGGAGAAGAAGAAGATGGAAGAGAGCAAGGTAAAGTTTGAGAACCTCTGCAAGCTCATGAAAGAAATCTTAGATAAGAAGGTCGAGATGGTGAN</span></span>
-<span><span class="co">#&gt; 5 NGCATCTCTACCCCTACTGTCCAGTAGGTGGGATGTGGCTGGGCTGGACAGTCCAGATTATACGAACTGGCAACTCTGAACAAACACCCTCCCTGGAAACAATATTATATTTGATGGTTAGATTCTTTAGCAAACCTATTACATTATTCG</span></span>
-<span><span class="co">#&gt; 6 AACAAAAACCCTCCCTAGCAACAATATTATATTTGATCGTTAGATTCTTTAGCAAACCTATTACCTTATTCGATGTCAGCTAACCTCTTGGTTTGATCATCTTTTCCAGCTGCTCTAGGGGCCTAACCACCTTGGATAACCTGGTCTCTN</span></span>
-<span><span class="co">#&gt;                                                                                                                                                     qual</span></span>
-<span><span class="co">#&gt; 1 #AA-AAFJFJJJJJJJJJAAJJJJJJJJJJJJJF&lt;-FJF-AAFJJJJFFJJFFF&lt;FFJ-&lt;&lt;AFAFF7-AFJFJJJJJ77FJAAJJ7AA777AJJAJFJ-A&lt;AA&lt;AAF7FFA-FAFA&lt;-77&lt;FJA--)77A7AA7--7AF&lt;)7777&lt;))--</span></span>
-<span><span class="co">#&gt; 2 -FAAA)-AJFF7JJFFAF-FJAF-&lt;A-7--JJJFA-F-A7-&lt;-F7-FFJFFJAFJFJJAJFJ&lt;FFJJJFAF7JJFFJFFJ7&lt;-&lt;AA-&lt;AF-JJA&lt;7&lt;777A7&lt;JA77-7JJJJJFJJJFJJJFFJJFJJJJJJJJJF7-JJJF-AFAAA#</span></span>
-<span><span class="co">#&gt; 3 #AA-AFFJFJJAAFFJAJJJ&lt;AJJJFJJJJJA&lt;&lt;F7-F-&lt;-&lt;FFAFFJFAJJF&lt;&lt;FJ----&lt;&lt;-7&lt;J-FF-AJJJF&lt;J&lt;JF-AFAA7-7AJJJF-7777A-7AA---777---7FJ--AFA7-7AAJFAA)7))7---A&lt;7&lt;--7---A7</span></span>
-<span><span class="co">#&gt; 4 AJA-FFJJJFF&lt;7FF-AA&lt;7F&lt;AF&lt;-7FJFJJJJJFF-&lt;7-JFJJJJFFAJFJ&lt;A-JF-JJJAFFFFJJJJFJ7&lt;--F-A-&lt;7JF&lt;-FF&lt;&lt;---&lt;-77&lt;-A-FJJFJJFJFJJJJJJJJJJJ&lt;JJJJJJJJJJJJJJ&lt;7JJJF&lt;FFAAA#</span></span>
-<span><span class="co">#&gt; 5 #AAFFF-FJJJA-AFJJJJJJJJJJJJJJJJJJJJJJJJFJF7-7FJJJFJJJ&lt;&lt;F-FF-FJJFJFJ-F&lt;JA7-7-7AF-JJJFJJJFJJJ7FJJJ&lt;FJJJJJJJJJJJJFJJJJJ7FFJ-7-7-A-AFFF-F--7F7AJJJJJ-&lt;&lt;FJJ</span></span>
-<span><span class="co">#&gt; 6 7A7-7--&lt;A-)&lt;)AA7-7-A&lt;&lt;7-FF&lt;7&lt;F&lt;7-7A-F-JJAAFJJJJJJA&lt;JF&lt;A7JJJFAA-J&lt;JJFJJA-7&lt;JJJJFFJJAJJA7&lt;&lt;&lt;7&lt;FJJAJJJFJJFJJJA-JJFJJFJJJJJJJJFJJJJJJ&lt;F-JJJJJFFJJFJJFFAAA#</span></span></code></pre></div>
+<span><span class="co">#&gt;                                                             seq</span></span>
+<span><span class="co">#&gt; 1 &lt;S4 class 'DNAStringSet' [package "Biostrings"] with 5 slots&gt;</span></span>
+<span><span class="co">#&gt; 2                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 3                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 4                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 5                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 6                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;                                                            qual</span></span>
+<span><span class="co">#&gt; 1 &lt;S4 class 'PhredQuality' [package "Biostrings"] with 5 slots&gt;</span></span>
+<span><span class="co">#&gt; 2                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 3                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 4                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 5                                                          &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 6                                                          &lt;NA&gt;</span></span></code></pre></div>
 <p>Compact mode returns lower-level raw vectors for throughput-oriented
 workflows. These values can be decoded back to ordinary strings
 explicitly when needed.</p>
@@ -363,7 +365,7 @@ staying close to existing Bioconductor usage patterns.</p>
 </h2>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/sessionInfo.html" class="external-link">sessionInfo</a></span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="co">#&gt; R version 4.6.0 (2026-04-24)</span></span>
+<span><span class="co">#&gt; R version 4.6.1 (2026-06-24)</span></span>
 <span><span class="co">#&gt; Platform: x86_64-pc-linux-gnu</span></span>
 <span><span class="co">#&gt; Running under: Ubuntu 24.04.4 LTS</span></span>
 <span><span class="co">#&gt; </span></span>
@@ -384,38 +386,40 @@ staying close to existing Bioconductor usage patterns.</p>
 <span><span class="co">#&gt; [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; other attached packages:</span></span>
-<span><span class="co">#&gt; [1] BamScale_0.99.10 BiocStyle_2.40.0</span></span>
+<span><span class="co">#&gt; [1] BamScale_0.99.12 BiocStyle_2.40.0</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
 <span><span class="co">#&gt;  [1] sass_0.4.10                 generics_0.1.4             </span></span>
-<span><span class="co">#&gt;  [3] SparseArray_1.12.2          bitops_1.0-9               </span></span>
+<span><span class="co">#&gt;  [3] bitops_1.0-9                SparseArray_1.12.2         </span></span>
 <span><span class="co">#&gt;  [5] lattice_0.22-9              digest_0.6.39              </span></span>
-<span><span class="co">#&gt;  [7] evaluate_1.0.5              grid_4.6.0                 </span></span>
-<span><span class="co">#&gt;  [9] bookdown_0.46               fastmap_1.2.0              </span></span>
+<span><span class="co">#&gt;  [7] evaluate_1.0.5              grid_4.6.1                 </span></span>
+<span><span class="co">#&gt;  [9] bookdown_0.47               fastmap_1.2.0              </span></span>
 <span><span class="co">#&gt; [11] jsonlite_2.0.0              Matrix_1.7-5               </span></span>
-<span><span class="co">#&gt; [13] cigarillo_1.2.0             BiocManager_1.30.27        </span></span>
-<span><span class="co">#&gt; [15] Biostrings_2.80.1           codetools_0.2-20           </span></span>
-<span><span class="co">#&gt; [17] textshaping_1.0.5           jquerylib_0.1.4            </span></span>
-<span><span class="co">#&gt; [19] abind_1.4-8                 cli_3.6.6                  </span></span>
-<span><span class="co">#&gt; [21] rlang_1.2.0                 crayon_1.5.3               </span></span>
-<span><span class="co">#&gt; [23] XVector_0.52.0              ompBAM_1.16.0              </span></span>
-<span><span class="co">#&gt; [25] Biobase_2.72.0              cachem_1.1.0               </span></span>
-<span><span class="co">#&gt; [27] DelayedArray_0.38.1         yaml_2.3.12                </span></span>
-<span><span class="co">#&gt; [29] S4Arrays_1.12.0             tools_4.6.0                </span></span>
-<span><span class="co">#&gt; [31] parallel_4.6.0              BiocParallel_1.46.0        </span></span>
-<span><span class="co">#&gt; [33] Rsamtools_2.28.0            SummarizedExperiment_1.42.0</span></span>
-<span><span class="co">#&gt; [35] BiocGenerics_0.58.1         R6_2.6.1                   </span></span>
-<span><span class="co">#&gt; [37] matrixStats_1.5.0           stats4_4.6.0               </span></span>
-<span><span class="co">#&gt; [39] lifecycle_1.0.5             Seqinfo_1.2.0              </span></span>
-<span><span class="co">#&gt; [41] S4Vectors_0.50.1            fs_2.1.0                   </span></span>
-<span><span class="co">#&gt; [43] IRanges_2.46.0              ragg_1.5.2                 </span></span>
-<span><span class="co">#&gt; [45] desc_1.4.3                  pkgdown_2.2.0              </span></span>
-<span><span class="co">#&gt; [47] bslib_0.11.0                Rcpp_1.1.1-1.1             </span></span>
-<span><span class="co">#&gt; [49] systemfonts_1.3.2           xfun_0.57                  </span></span>
-<span><span class="co">#&gt; [51] GenomicRanges_1.64.0        GenomicAlignments_1.48.0   </span></span>
-<span><span class="co">#&gt; [53] MatrixGenerics_1.24.0       knitr_1.51                 </span></span>
-<span><span class="co">#&gt; [55] htmltools_0.5.9             rmarkdown_2.31             </span></span>
-<span><span class="co">#&gt; [57] compiler_4.6.0</span></span></code></pre></div>
+<span><span class="co">#&gt; [13] cigarillo_1.2.1             GenomeInfoDb_1.48.0        </span></span>
+<span><span class="co">#&gt; [15] BiocManager_1.30.27         httr_1.4.8                 </span></span>
+<span><span class="co">#&gt; [17] UCSC.utils_1.8.0            Biostrings_2.80.1          </span></span>
+<span><span class="co">#&gt; [19] codetools_0.2-20            textshaping_1.0.5          </span></span>
+<span><span class="co">#&gt; [21] jquerylib_0.1.4             abind_1.4-8                </span></span>
+<span><span class="co">#&gt; [23] cli_3.6.6                   rlang_1.3.0                </span></span>
+<span><span class="co">#&gt; [25] crayon_1.5.3                XVector_0.52.0             </span></span>
+<span><span class="co">#&gt; [27] ompBAM_1.16.0               Biobase_2.72.0             </span></span>
+<span><span class="co">#&gt; [29] cachem_1.1.0                DelayedArray_0.38.2        </span></span>
+<span><span class="co">#&gt; [31] yaml_2.3.12                 otel_0.2.0                 </span></span>
+<span><span class="co">#&gt; [33] S4Arrays_1.12.0             tools_4.6.1                </span></span>
+<span><span class="co">#&gt; [35] parallel_4.6.1              BiocParallel_1.46.0        </span></span>
+<span><span class="co">#&gt; [37] Rsamtools_2.28.0            SummarizedExperiment_1.42.0</span></span>
+<span><span class="co">#&gt; [39] BiocGenerics_0.58.1         R6_2.6.1                   </span></span>
+<span><span class="co">#&gt; [41] matrixStats_1.5.0           stats4_4.6.1               </span></span>
+<span><span class="co">#&gt; [43] lifecycle_1.0.5             Seqinfo_1.2.0              </span></span>
+<span><span class="co">#&gt; [45] S4Vectors_0.50.1            fs_2.1.0                   </span></span>
+<span><span class="co">#&gt; [47] IRanges_2.46.0              ragg_1.5.2                 </span></span>
+<span><span class="co">#&gt; [49] desc_1.4.3                  pkgdown_2.2.1              </span></span>
+<span><span class="co">#&gt; [51] bslib_0.11.0                Rcpp_1.1.2                 </span></span>
+<span><span class="co">#&gt; [53] systemfonts_1.3.2           xfun_0.60                  </span></span>
+<span><span class="co">#&gt; [55] GenomicAlignments_1.48.0    GenomicRanges_1.64.0       </span></span>
+<span><span class="co">#&gt; [57] MatrixGenerics_1.24.0       knitr_1.51                 </span></span>
+<span><span class="co">#&gt; [59] htmltools_0.5.9             rmarkdown_2.31             </span></span>
+<span><span class="co">#&gt; [61] compiler_4.6.1</span></span></code></pre></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
@@ -428,7 +432,7 @@ staying close to existing Bioconductor usage patterns.</p>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

@@ -157,14 +157,25 @@ Parallelism model:
 
 Compatibility notes:
 
+- `rname`, `mrnm`, and `strand` are returned as `factor` columns,
+  matching
+  [`Rsamtools::scanBam()`](https://rdrr.io/pkg/Rsamtools/man/scanBam.html).
+  `rname`/`mrnm` levels are the BAM header reference names; unmapped or
+  unset references are `NA` (not `"*"`). `strand` has levels
+  `c("+", "-", "*")`.
+
 - Region filtering via `param$which` is supported as a sequential filter
   (not index-jump random access).
 
 - Flag filtering uses `ScanBamFlag` semantics by converting logical flag
   requirements into required-set and required-unset bit masks.
 
-- Tag values are returned as character columns. Scalar tags are scalar
-  strings; `B` tags are comma-separated vectors.
+- Tag values are returned with their native BAM-derived type, matching
+  `scanBam()`: integer-valued tags (`c`, `C`, `s`, `S`, `i`, `I`) become
+  integer columns (or double when a value exceeds the R integer range),
+  floating-point (`f`) tags become double columns, and `A`/`Z`/`H`/`B`
+  tags become character columns. `B` tags are comma-separated character
+  values. Absent tag values are `NA`.
 
 - `seqqual_mode = "compact"` is optimized for throughput-oriented
   benchmarking and returns raw list-columns for `seq`/`qual`, not

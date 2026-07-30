@@ -151,7 +151,7 @@ ga
 #>    [9999]      1237         2 | ST-E00600:137:H77Y3C..       163
 #>   [10000]       270         1 | ST-E00600:137:H77Y3C..        83
 #>   -------
-#>   seqinfo: 25 sequences from an unspecified genome; no seqlengths
+#>   seqinfo: 25 sequences from an unspecified genome
 ```
 
 ### Sequence and quality extraction
@@ -170,6 +170,8 @@ seqqual_compatible <- bam_read(
 )
 
 head(seqqual_compatible)
+#> Warning in format.data.frame(if (omit) x[seq_len(n0), , drop = FALSE] else x, :
+#> corrupt data frame: columns will be truncated or padded with NAs
 #>                                       qname
 #> 1  ST-E00600:137:H77Y3CCXY:1:1101:6837:1309
 #> 2  ST-E00600:137:H77Y3CCXY:1:1101:6837:1309
@@ -177,20 +179,20 @@ head(seqqual_compatible)
 #> 4 ST-E00600:137:H77Y3CCXY:1:1101:10450:1309
 #> 5 ST-E00600:137:H77Y3CCXY:1:1101:15077:1309
 #> 6 ST-E00600:137:H77Y3CCXY:1:1101:15077:1309
-#>                                                                                                                                                      seq
-#> 1 NGACCGGCGAGGAATAGGAATCATGGCGGCTGCGCTGTTCGTGCTGCTGGGATTCGCGCTGCTGGGCACCCACGGAGCCTCCGGGGCTGCCGGCACAGTCTTCACTACCGTAGAAGACCTTGGCTCGAAGATACTCCTCACCTGCTCCTT
-#> 2 TGCCGGCACAGTCTTCACTACCGTAGAAGACCTTGGCTCCAAGATACTCCTCACCTGCTCCTTGAATGACAGCGCCACAGAGGTCACAGGGCACCGCTGGCTGAAGGCGGGCGTGGTGCTGAAGGAGGACGCGCTGCCAGGCCAGAAAAN
-#> 3 NGGAGCTTCGAGGTGGTATATATGACCGAGCCCATTAATGAGTACTGTGTGCAGCAGCGTAAGCAATTTGATGGGAAGAGCGTGGTCTCAGTTAGCAAGGAGGGTCTGGAGCTGCCTGAGGATGAGGAGGAGCTGAAGAAGATGGAGGAG
-#> 4 TGGGAAGAGCCTGGTCTCAGTTACCAAGGAGGGTCTGGAGCTGCCTGAGGATGAGTAGGAGAAGAAGAAGATGGAAGAGAGCAAGGTAAAGTTTGAGAACCTCTGCAAGCTCATGAAAGAAATCTTAGATAAGAAGGTCGAGATGGTGAN
-#> 5 NGCATCTCTACCCCTACTGTCCAGTAGGTGGGATGTGGCTGGGCTGGACAGTCCAGATTATACGAACTGGCAACTCTGAACAAACACCCTCCCTGGAAACAATATTATATTTGATGGTTAGATTCTTTAGCAAACCTATTACATTATTCG
-#> 6 AACAAAAACCCTCCCTAGCAACAATATTATATTTGATCGTTAGATTCTTTAGCAAACCTATTACCTTATTCGATGTCAGCTAACCTCTTGGTTTGATCATCTTTTCCAGCTGCTCTAGGGGCCTAACCACCTTGGATAACCTGGTCTCTN
-#>                                                                                                                                                     qual
-#> 1 #AA-AAFJFJJJJJJJJJAAJJJJJJJJJJJJJF<-FJF-AAFJJJJFFJJFFF<FFJ-<<AFAFF7-AFJFJJJJJ77FJAAJJ7AA777AJJAJFJ-A<AA<AAF7FFA-FAFA<-77<FJA--)77A7AA7--7AF<)7777<))--
-#> 2 -FAAA)-AJFF7JJFFAF-FJAF-<A-7--JJJFA-F-A7-<-F7-FFJFFJAFJFJJAJFJ<FFJJJFAF7JJFFJFFJ7<-<AA-<AF-JJA<7<777A7<JA77-7JJJJJFJJJFJJJFFJJFJJJJJJJJJF7-JJJF-AFAAA#
-#> 3 #AA-AFFJFJJAAFFJAJJJ<AJJJFJJJJJA<<F7-F-<-<FFAFFJFAJJF<<FJ----<<-7<J-FF-AJJJF<J<JF-AFAA7-7AJJJF-7777A-7AA---777---7FJ--AFA7-7AAJFAA)7))7---A<7<--7---A7
-#> 4 AJA-FFJJJFF<7FF-AA<7F<AF<-7FJFJJJJJFF-<7-JFJJJJFFAJFJ<A-JF-JJJAFFFFJJJJFJ7<--F-A-<7JF<-FF<<---<-77<-A-FJJFJJFJFJJJJJJJJJJJ<JJJJJJJJJJJJJJ<7JJJF<FFAAA#
-#> 5 #AAFFF-FJJJA-AFJJJJJJJJJJJJJJJJJJJJJJJJFJF7-7FJJJFJJJ<<F-FF-FJJFJFJ-F<JA7-7-7AF-JJJFJJJFJJJ7FJJJ<FJJJJJJJJJJJJFJJJJJ7FFJ-7-7-A-AFFF-F--7F7AJJJJJ-<<FJJ
-#> 6 7A7-7--<A-)<)AA7-7-A<<7-FF<7<F<7-7A-F-JJAAFJJJJJJA<JF<A7JJJFAA-J<JJFJJA-7<JJJJFFJJAJJA7<<<7<FJJAJJJFJJFJJJA-JJFJJFJJJJJJJJFJJJJJJ<F-JJJJJFFJJFJJFFAAA#
+#>                                                             seq
+#> 1 <S4 class 'DNAStringSet' [package "Biostrings"] with 5 slots>
+#> 2                                                          <NA>
+#> 3                                                          <NA>
+#> 4                                                          <NA>
+#> 5                                                          <NA>
+#> 6                                                          <NA>
+#>                                                            qual
+#> 1 <S4 class 'PhredQuality' [package "Biostrings"] with 5 slots>
+#> 2                                                          <NA>
+#> 3                                                          <NA>
+#> 4                                                          <NA>
+#> 5                                                          <NA>
+#> 6                                                          <NA>
 ```
 
 Compact mode returns lower-level raw vectors for throughput-oriented
@@ -304,7 +306,7 @@ Bioconductor usage patterns.
 ``` r
 
 sessionInfo()
-#> R version 4.6.0 (2026-04-24)
+#> R version 4.6.1 (2026-06-24)
 #> Platform: x86_64-pc-linux-gnu
 #> Running under: Ubuntu 24.04.4 LTS
 #> 
@@ -325,36 +327,38 @@ sessionInfo()
 #> [1] stats     graphics  grDevices utils     datasets  methods   base     
 #> 
 #> other attached packages:
-#> [1] BamScale_0.99.10 BiocStyle_2.40.0
+#> [1] BamScale_0.99.12 BiocStyle_2.40.0
 #> 
 #> loaded via a namespace (and not attached):
 #>  [1] sass_0.4.10                 generics_0.1.4             
-#>  [3] SparseArray_1.12.2          bitops_1.0-9               
+#>  [3] bitops_1.0-9                SparseArray_1.12.2         
 #>  [5] lattice_0.22-9              digest_0.6.39              
-#>  [7] evaluate_1.0.5              grid_4.6.0                 
-#>  [9] bookdown_0.46               fastmap_1.2.0              
+#>  [7] evaluate_1.0.5              grid_4.6.1                 
+#>  [9] bookdown_0.47               fastmap_1.2.0              
 #> [11] jsonlite_2.0.0              Matrix_1.7-5               
-#> [13] cigarillo_1.2.0             BiocManager_1.30.27        
-#> [15] Biostrings_2.80.1           codetools_0.2-20           
-#> [17] textshaping_1.0.5           jquerylib_0.1.4            
-#> [19] abind_1.4-8                 cli_3.6.6                  
-#> [21] rlang_1.2.0                 crayon_1.5.3               
-#> [23] XVector_0.52.0              ompBAM_1.16.0              
-#> [25] Biobase_2.72.0              cachem_1.1.0               
-#> [27] DelayedArray_0.38.1         yaml_2.3.12                
-#> [29] S4Arrays_1.12.0             tools_4.6.0                
-#> [31] parallel_4.6.0              BiocParallel_1.46.0        
-#> [33] Rsamtools_2.28.0            SummarizedExperiment_1.42.0
-#> [35] BiocGenerics_0.58.1         R6_2.6.1                   
-#> [37] matrixStats_1.5.0           stats4_4.6.0               
-#> [39] lifecycle_1.0.5             Seqinfo_1.2.0              
-#> [41] S4Vectors_0.50.1            fs_2.1.0                   
-#> [43] IRanges_2.46.0              ragg_1.5.2                 
-#> [45] desc_1.4.3                  pkgdown_2.2.0              
-#> [47] bslib_0.11.0                Rcpp_1.1.1-1.1             
-#> [49] systemfonts_1.3.2           xfun_0.57                  
-#> [51] GenomicRanges_1.64.0        GenomicAlignments_1.48.0   
-#> [53] MatrixGenerics_1.24.0       knitr_1.51                 
-#> [55] htmltools_0.5.9             rmarkdown_2.31             
-#> [57] compiler_4.6.0
+#> [13] cigarillo_1.2.1             GenomeInfoDb_1.48.0        
+#> [15] BiocManager_1.30.27         httr_1.4.8                 
+#> [17] UCSC.utils_1.8.0            Biostrings_2.80.1          
+#> [19] codetools_0.2-20            textshaping_1.0.5          
+#> [21] jquerylib_0.1.4             abind_1.4-8                
+#> [23] cli_3.6.6                   rlang_1.3.0                
+#> [25] crayon_1.5.3                XVector_0.52.0             
+#> [27] ompBAM_1.16.0               Biobase_2.72.0             
+#> [29] cachem_1.1.0                DelayedArray_0.38.2        
+#> [31] yaml_2.3.12                 otel_0.2.0                 
+#> [33] S4Arrays_1.12.0             tools_4.6.1                
+#> [35] parallel_4.6.1              BiocParallel_1.46.0        
+#> [37] Rsamtools_2.28.0            SummarizedExperiment_1.42.0
+#> [39] BiocGenerics_0.58.1         R6_2.6.1                   
+#> [41] matrixStats_1.5.0           stats4_4.6.1               
+#> [43] lifecycle_1.0.5             Seqinfo_1.2.0              
+#> [45] S4Vectors_0.50.1            fs_2.1.0                   
+#> [47] IRanges_2.46.0              ragg_1.5.2                 
+#> [49] desc_1.4.3                  pkgdown_2.2.1              
+#> [51] bslib_0.11.0                Rcpp_1.1.2                 
+#> [53] systemfonts_1.3.2           xfun_0.60                  
+#> [55] GenomicAlignments_1.48.0    GenomicRanges_1.64.0       
+#> [57] MatrixGenerics_1.24.0       knitr_1.51                 
+#> [59] htmltools_0.5.9             rmarkdown_2.31             
+#> [61] compiler_4.6.1
 ```

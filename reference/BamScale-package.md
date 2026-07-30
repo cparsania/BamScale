@@ -15,3 +15,7 @@ Useful links:
 ## Author
 
 **Maintainer**: Chirag Parsania <chirag.parsania@gmail.com>
+
+Authors:
+
+- Chirag Parsania <chirag.parsania@gmail.com>
