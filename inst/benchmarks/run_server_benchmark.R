@@ -270,6 +270,24 @@ stop_bpparam <- function(bp) {
   invisible(NULL)
 }
 
+# Start the PSOCK cluster and pre-load reader namespaces on the workers OUTSIDE
+# the timed region. Without this, every timed iteration auto-starts and stops the
+# cluster (bplapply on an unstarted param), charging spin-up + per-worker library
+# loading to every iteration -- a constant that dilutes multi-file ratios toward
+# 1.0 at high worker counts. The workflow harness has always done this; applying
+# it here re-baselines the read harness's multi comparators (disclosed in run
+# notes). The same package set is pre-loaded for every arm, so both sides start
+# from identical worker state.
+start_bpparam_preloaded <- function(bp, pkgs = c("BamScale", "Rsamtools", "GenomicAlignments")) {
+  if (is.null(bp)) return(invisible(NULL))
+  try(BiocParallel::bpstart(bp), silent = TRUE)
+  try(BiocParallel::bplapply(seq_len(BiocParallel::bpnworkers(bp)), function(i, pk) {
+    for (p in pk) suppressMessages(requireNamespace(p, quietly = TRUE))
+    TRUE
+  }, pk = pkgs, BPPARAM = bp), silent = TRUE)
+  invisible(bp)
+}
+
 count_scan_batch <- function(batch) {
   if (!is.list(batch) || length(batch) == 0L) return(0)
 
@@ -1597,6 +1615,7 @@ cfg <- list(
   include_galignments = as_bool(opts[["include-galignments"]], default_include_galignments),
   include_auto_threads = as_bool(opts[["include-auto-threads"]], default_include_auto_threads),
   include_multi = as_bool(opts[["include-multi"]], TRUE),
+  include_single = as_bool(opts[["include-single"]], TRUE),
   include_rsamtools = as_bool(opts[["include-rsamtools"]], default_include_rsamtools),
   ensure_index = as_bool(opts[["ensure-index"]], TRUE),
   allow_repeat_files = as_bool(opts[["allow-repeat-files"]], FALSE),
@@ -1774,6 +1793,14 @@ if (nzchar(cfg$baseline_results_dir)) {
 single_mb <- as.numeric(file.size(single_file) / 1024^2)
 multi_mb <- as.numeric(sum(file.size(multi_files)) / 1024^2)
 
+# --include-single=false drops the whole single scenario (case building, record
+# counting and comparators all iterate cfg$single_workloads, so emptying it
+# cascades). Lets an orchestrator run single and multi stages with different
+# iteration counts.
+if (!isTRUE(cfg$include_single)) {
+  cfg$single_workloads <- character(0)
+}
+
 single_records <- setNames(rep(NA_real_, length(cfg$single_workloads)), cfg$single_workloads)
 if (isTRUE(cfg$compute_records)) {
   message("Computing single-file record counts...")
@@ -1794,18 +1821,30 @@ if (isTRUE(cfg$compute_records)) {
 multi_records <- setNames(rep(NA_real_, length(cfg$multi_workloads)), cfg$multi_workloads)
 if (isTRUE(cfg$compute_records)) {
   message("Computing multi-file record counts...")
+  # This is untimed metadata (records_per_s denominators), so use the full
+  # thread budget and, critically, count ONE FILE AT A TIME and discard each
+  # result. The previous single bam_read(file = multi_files, ...) call held
+  # every file's materialised result simultaneously -- at manuscript scale
+  # (24 x ~4 GB, ~2e9 records) the seqqual pass alone would exceed RAM.
+  count_threads <- max(1L, min(48L, cfg$max_threads))
   for (w in cfg$multi_workloads) {
     spec <- workloads[[w]]
-    ref <- BamScale::bam_read(
-      file = multi_files,
-      what = spec$what,
-      as = spec$as,
-      seqqual_mode = spec$seqqual_mode,
-      threads = 1L,
-      BPPARAM = NULL,
-      auto_threads = FALSE
-    )
-    multi_records[[w]] <- count_records(ref)
+    total <- 0
+    for (f in multi_files) {
+      ref <- BamScale::bam_read(
+        file = f,
+        what = spec$what,
+        as = spec$as,
+        seqqual_mode = spec$seqqual_mode,
+        threads = count_threads,
+        BPPARAM = NULL,
+        auto_threads = FALSE
+      )
+      total <- total + count_records(ref)
+      rm(ref)
+    }
+    invisible(gc(full = TRUE))
+    multi_records[[w]] <- total
   }
 }
 
@@ -2165,6 +2204,7 @@ if (isTRUE(cfg$include_multi)) {
           total_mb_local <- multi_mb
           function(case_id, execution_rank) {
             bp <- make_bpparam(workers_local, backend = backend_local)
+            start_bpparam_preloaded(bp)
             on.exit(stop_bpparam(bp), add = TRUE)
             run_case(
               scenario = "multi",
@@ -2233,6 +2273,7 @@ if (isTRUE(cfg$include_multi)) {
             total_mb_local <- multi_mb
             function(case_id, execution_rank) {
               bp <- make_bpparam(workers_local, backend = backend_local)
+              start_bpparam_preloaded(bp)
               on.exit(stop_bpparam(bp), add = TRUE)
               run_case(
                 scenario = "multi",
@@ -2300,6 +2341,7 @@ if (isTRUE(cfg$include_multi)) {
             spec_local <- spec
             function(case_id, execution_rank) {
               bp <- make_bpparam(workers_local, backend = backend_local)
+              start_bpparam_preloaded(bp)
               on.exit(stop_bpparam(bp), add = TRUE)
               run_case(
                 scenario = "multi",
@@ -2367,6 +2409,7 @@ if (isTRUE(cfg$include_multi)) {
             total_mb_local <- multi_mb
             function(case_id, execution_rank) {
               bp <- make_bpparam(workers_local, backend = backend_local)
+              start_bpparam_preloaded(bp)
               on.exit(stop_bpparam(bp), add = TRUE)
               run_case(
                 scenario = "multi",
@@ -2425,6 +2468,7 @@ if (isTRUE(cfg$include_multi)) {
             spec_local <- spec
             function(case_id, execution_rank) {
               bp <- make_bpparam(workers_local, backend = backend_local)
+              start_bpparam_preloaded(bp)
               on.exit(stop_bpparam(bp), add = TRUE)
               run_case(
                 scenario = "multi",
