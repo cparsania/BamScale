@@ -1,3 +1,81 @@
+# BamScale 0.99.14
+
+## New features
+
+* Four new exported functions compute common BAM summaries entirely inside the
+  multithreaded C++ reader (per-thread accumulators folded in the OpenMP region;
+  only the compact result crosses into R -- no per-read R objects are ever
+  materialised), each verified byte-identical to its standard Bioconductor
+  equivalent:
+  - `fragment_sizes()`: paired-end fragment-size (insert-size) distribution;
+    identical to `table(abs(scanBam(isize)))`. `drop_mate_unmapped = TRUE`
+    (default) replicates `scanBam`'s `isize = NA` rule for mate-unmapped reads.
+  - `mapq_dist()`: mapping-quality distribution; identical to
+    `table(scanBam(mapq))` (MAPQ 255 reported as 255, where scanBam uses `NA`).
+  - `bam_coverage()`: per-base coverage as a `SimpleRleList`; `identical()` to
+    `GenomicAlignments::coverage(readGAlignments(...))`, including the CIGAR
+    conventions (`M/=/X/D` cover, `N` gaps, `drop.D.ranges = FALSE`) and the
+    readGAlignments record filter (only unmapped reads dropped).
+  - `bam_coverage_bigwig()`: single-pass BAM -> coverage bigWig written natively
+    via the bundled libBigWig -- no R-side coverage object, no
+    `rtracklayer::export.bw` round-trip. Data and zoom blocks are compressed
+    across the OpenMP threads (`parallel = TRUE`, default); the parallel output
+    is bit-for-bit identical to the serial writer. A `compress_level` argument
+    exposes the zlib deflate level, and `verbose = TRUE` prints a per-phase
+    timing breakdown.
+* `bam_read(as = "GAlignments")` now uses a dedicated fast path that assembles
+  the `GAlignments` slots in C++: seqnames/strand accumulated as run-length
+  pairs inside the parallel region, the cigar column materialised through a
+  CHARSXP cache that exploits CIGAR-string redundancy, and qname decoded only
+  when actually requested. Output is `identical()` to
+  `GenomicAlignments::readGAlignments()` (verified at 226M-read scale) and to
+  the previous construction path. `options(BamScale.ga_fastpath = FALSE)`
+  restores the old path.
+* Vendored libBigWig 0.4.8 (MIT, Devon Ryan) under `src/libBigWig/` (built with
+  `-DNOCURL`, local files only). Local modifications, each commented in
+  `bwWrite.c`: a tunable zlib deflate level, deferred parallel block
+  compression, and zoom-level construction from in-memory coverage runs instead
+  of re-reading the just-written data section.
+
+## Performance
+
+* Fixed a quadratic reallocation pattern in the reader's batch merge: per-batch
+  exact-capacity `reserve()` calls copied all accumulated data on every batch.
+  Buffers now grow geometrically. This affects every read path -- e.g. on a
+  229M-read BAM at 48 threads, `as = "GAlignments"` dropped from ~300 s to
+  ~56 s, and plain data-frame reads improved 2.8-4.4x.
+* CIGAR strings are formatted with an allocation-free digit writer instead of
+  per-op `std::to_string`.
+* Representative large-file results (229M-read ATAC BAM, 48 threads, warm
+  cache): `bam_coverage()` 7.2x vs `coverage(readGAlignments())`;
+  `bam_coverage_bigwig()` 2.6x vs megadepth at equal compression;
+  `fragment_sizes()` 5.4x vs `scanBam` + `table()`; `as = "GAlignments"` 4.8x
+  vs `readGAlignments()` (and faster even single-threaded).
+
+## Benchmarks
+
+* `run_workflow_benchmark.R` gains first-class arms for the four new functions
+  (`--include-fastcov/-bigwig/-fragsize/-mapq`), each behind an `identical()`
+  correctness gate, with an optional megadepth context arm (`--megadepth-bin`).
+* `run_server_benchmark.R`: BiocParallel PSOCK clusters are now started and
+  their namespaces pre-loaded outside the timed region in all multi-file arms
+  (previously cluster spin-up was charged to every iteration, diluting
+  comparator ratios at high worker counts); added `--include-single` so single
+  and multi scenarios can run in separate stages.
+* New reproducible manuscript-benchmark tooling: `select_encode_atac.R`
+  (ENCODE portal selection -> accession/md5 manifest), manifest-driven
+  `download_atac_data.R` with md5 verification, `samtools_reference.sh`,
+  `merge_runs.R`, and the staged `run_manuscript_final.sh` orchestrator.
+
+## Tests
+
+* New testthat gates: byte-identity of `fragment_sizes()` / `mapq_dist()` /
+  `bam_coverage()` against their Rsamtools/GenomicAlignments equivalents;
+  `bam_coverage_bigwig()` value-identity after re-import plus bit-for-bit
+  parallel-vs-serial output; six `GAlignments` fast-path identity gates
+  (threads 1/4, mcols order, `use.names`, flag/mapq filters, fast == slow,
+  `gctorture`).
+
 # BamScale 0.99.13
 
 ## New features

@@ -17,9 +17,7 @@
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
-^inst/benchmarks/bamscale_naturemethods\.qmd$
-^inst/benchmarks/references\.bib$
-^inst/benchmarks/nature\.csl$
+^manuscript$
 ^benchmark_results$
 ^Rplots\.pdf$
 ^.*\.log$

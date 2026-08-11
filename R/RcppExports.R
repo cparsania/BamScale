@@ -13,7 +13,27 @@ read_bam_cpp <- function(bam_file, n_threads, min_mapq, include_unmapped, includ
     .Call(`_BamScale_read_bam_cpp`, bam_file, n_threads, min_mapq, include_unmapped, include_seq, include_qual, compact_seqqual, flag_require_set, flag_require_unset, tag_names_r, which_seqnames, which_starts, which_ends, which_labels, with_which_label, field_mask)
 }
 
+galignments_cpp <- function(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset, field_mask) {
+    .Call(`_BamScale_galignments_cpp`, bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset, field_mask)
+}
+
 count_bam_cpp <- function(bam_file, n_threads, min_mapq, include_unmapped, flag_require_set, flag_require_unset, which_seqnames, which_starts, which_ends) {
     .Call(`_BamScale_count_bam_cpp`, bam_file, n_threads, min_mapq, include_unmapped, flag_require_set, flag_require_unset, which_seqnames, which_starts, which_ends)
+}
+
+fragment_sizes_cpp <- function(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset, max_fragment, drop_mate_unmapped) {
+    .Call(`_BamScale_fragment_sizes_cpp`, bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset, max_fragment, drop_mate_unmapped)
+}
+
+mapq_dist_cpp <- function(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset) {
+    .Call(`_BamScale_mapq_dist_cpp`, bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset)
+}
+
+bam_coverage_cpp <- function(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset) {
+    .Call(`_BamScale_bam_coverage_cpp`, bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset)
+}
+
+bam_coverage_bigwig_cpp <- function(bam_file, out_file, n_threads, min_mapq, flag_require_set, flag_require_unset, n_zooms, compress_level, parallel, verbose) {
+    .Call(`_BamScale_bam_coverage_bigwig_cpp`, bam_file, out_file, n_threads, min_mapq, flag_require_set, flag_require_unset, n_zooms, compress_level, parallel, verbose)
 }
 
