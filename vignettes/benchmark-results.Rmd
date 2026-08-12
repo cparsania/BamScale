@@ -37,32 +37,33 @@ benchmark harness that produces them is in `inst/benchmarks/`
 reproduce the full results.
 
 ```{r results-data}
-## Summary results (from the benchmark runs; see inst/benchmarks/ to reproduce).
+## Summary results (benchmark run 2026-08-10, BamScale 0.99.14; see
+## inst/benchmarks/ to reproduce).
 read_tbl <- data.frame(
   Workload    = c("Core fields", "GAlignments", "Sequence + quality"),
   Reads       = c("qname/flag/rname/pos/mapq/cigar", "-> GAlignments object", "seq + base quality"),
-  `Standard (s)` = c(15.6, 10.9, 22.3),
-  `BamScale (s)` = c(6.8, 3.4, 8.1),
-  Threads     = c(48L, 48L, 24L),
-  Speedup     = c(2.29, 3.22, 2.76),
+  `Standard (s)` = c(15.4, 10.6, 21.6),
+  `BamScale (s)` = c(6.3, 2.6, 7.0),
+  Threads     = c(48L, 48L, 48L),
+  Speedup     = c(2.45, 4.03, 3.09),
   check.names = FALSE
 )
 
 spectrum_tbl <- data.frame(
-  Endpoint      = c("ATAC fragment-size QC", "GAlignments (read)", "Sequence + quality (read)",
-                    "Coverage -> RleList", "Core fields (read)", "Coverage -> bigWig"),
-  Layer         = c("workflow", "read", "read", "workflow", "read", "workflow"),
-  `Read fraction` = c(0.93, 1.00, 1.00, 0.76, 1.00, 0.21),
-  Speedup       = c(3.66, 3.22, 2.76, 2.50, 2.29, 1.23),
+  Endpoint      = c("ATAC fragment-size QC", "GAlignments (read)", "Coverage -> RleList",
+                    "Sequence + quality (read)", "Core fields (read)", "Coverage -> bigWig"),
+  Layer         = c("workflow", "read", "workflow", "read", "read", "workflow"),
+  `Read fraction` = c(0.92, 1.00, 0.76, 1.00, 1.00, 0.22),
+  Speedup       = c(4.14, 4.03, 3.29, 3.09, 2.45, 1.24),
   check.names = FALSE
 )
 ```
 
 ## Read throughput on a single large BAM
 
-On a single large BAM, BamScale reads **2.3--3.2x faster** than the standard reader
+On a single large BAM, BamScale reads **2.5--4x faster** than the standard reader
 across three representative access patterns, because it spreads the BGZF decode
-across cores:
+across cores and assembles the output objects in native code:
 
 ```{r read-table}
 knitr::kable(
@@ -84,14 +85,15 @@ ggplot(read_tbl, aes(stats::reorder(Workload, Speedup), Speedup)) +
   theme_minimal(base_size = 12)
 ```
 
-Two honest points. At **one thread** BamScale is at or near the single-threaded
-readers (the win comes from threading, not a faster single-core path), and the
-scaling is **strongly sublinear** -- roughly 2--3x on 48 threads, saturating by
-about 24 threads. The value is not near-linear scaling but the ability to use cores
-that a single-threaded reader cannot use at all -- as on one large BAM in an
-interactive session. Object-free command-line decoders such as `samtools` reach
-several-fold higher *raw* throughput, but return no Bioconductor object; BamScale's
-role is fast, object-faithful decoding *inside* R.
+Two honest points. At **one thread** BamScale is modestly faster than the
+single-threaded readers (about 1.1--1.3x, from native-code object assembly); most
+of the win comes from threading, and the scaling is **strongly sublinear** --
+roughly 2.5--4x on 48 threads, largely saturating between 24 and 48 threads. The
+value is not near-linear scaling but the ability to use cores that a
+single-threaded reader cannot use at all -- as on one large BAM in an interactive
+session. Object-free command-line decoders such as `samtools` reach several-fold
+higher *raw* throughput, but return no Bioconductor object; BamScale's role is
+fast, object-faithful decoding *inside* R.
 
 ## End-to-end impact tracks the read fraction
 
@@ -121,20 +123,38 @@ ggplot(spectrum_tbl, aes(stats::reorder(Endpoint, Speedup), Speedup, fill = `Rea
 ```
 
 - **ATAC fragment-size QC** is nearly pure read, so BamScale's read speedup carries
-  through almost intact: **3.66x** end-to-end.
-- **Coverage -> bigWig** is dominated by the shared, single-threaded bigWig writer
-  (identical work on both arms), so the end-to-end gain is bounded at **1.23x** even
-  though the read phase itself is much faster. Stopping at the in-memory coverage
-  `RleList` -- what many analyses consume next -- recovers a **2.50x** gain.
+  through almost intact: **4.14x** end-to-end.
+- **Coverage -> bigWig** is dominated by the shared, single-threaded
+  `rtracklayer::export.bw` step (identical work on both arms), so the end-to-end
+  gain is bounded at **1.24x** even though the read phase itself is 6.6x faster.
+  Stopping at the in-memory coverage `RleList` -- what many analyses consume
+  next -- recovers a **3.29x** gain. (Since 0.99.14, `bam_coverage()` and
+  `bam_coverage_bigwig()` compute these endpoints directly inside the reader,
+  removing the R-side read phase entirely; see the function documentation.)
 
 ## A note on cores and fairness
 
 A multithreaded reader can occupy cores a single-threaded one cannot. At **matched
 core counts** (both arms given the same number of cores) the two readers are
-approximately at parity for multi-file processing (coverage ~1.10x, ATAC ~0.96x):
+approximately at parity for multi-file processing (coverage ~1.13x, ATAC ~0.99x):
 the single-threaded reader already saturates a machine by parallelising *across*
 files, so BamScale's multi-file advantage comes specifically from also threading
 *within* a file -- which pays off when there are fewer files than cores.
+
+## Beyond reading: in-reader aggregation (new in 0.99.14)
+
+For workflows whose endpoint is a summary rather than the alignments themselves,
+BamScale 0.99.14 adds four functions that fold the computation inside the
+multithreaded reader, so no per-read R objects are ever materialised:
+`fragment_sizes()` (paired-end fragment-size distribution),
+`mapq_dist()` (mapping-quality distribution), `bam_coverage()` (per-base coverage
+`RleList`), and `bam_coverage_bigwig()` (single-pass BAM to bigWig with parallel
+block compression). Each is verified byte-identical to its standard equivalent
+(`table(abs(scanBam(isize)))`, `table(scanBam(mapq))`,
+`coverage(readGAlignments())`, and the serial bigWig writer respectively) -- see
+their reference pages. These remove the read phase from the Amdahl decomposition
+above entirely; comprehensive benchmarks on public ENCODE data accompany the
+manuscript.
 
 ## Output is identical to the standard tools
 

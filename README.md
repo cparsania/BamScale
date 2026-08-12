@@ -2,17 +2,24 @@
 
 > Bioconductor-friendly multithreaded BAM processing
 
-[![Bioconductor](https://bioconductor.org/shields/availability/devel/BamScale.svg)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
-[![Bioc build](https://bioconductor.org/shields/build/devel/bioc/BamScale.svg)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
-[![Bioc downloads](https://bioconductor.org/shields/downloads/devel/BamScale.svg)](https://bioconductor.org/packages/stats/bioc/BamScale/)
+<!-- versions -->
+[![GitHub version](https://img.shields.io/github/r-package/v/cparsania/BamScale?label=GitHub&logo=github&color=blue)](https://github.com/cparsania/BamScale)
+[![Bioc devel version](https://bioc.r-universe.dev/badges/BamScale?label=Bioc%20devel)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
+[![Bioc release](https://img.shields.io/badge/Bioc%20release-upcoming%20(3.24)-orange)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
+<!-- checks -->
 [![R-CMD-check](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml)
+[![Bioc build](https://bioconductor.org/shields/build/devel/bioc/BamScale.svg)](https://bioconductor.org/checkResults/devel/bioc-LATEST/BamScale/)
 [![pkgdown](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml)
+<!-- status -->
+[![Bioconductor availability](https://bioconductor.org/shields/availability/devel/BamScale.svg)](https://bioconductor.org/packages/3.24/bioc/html/BamScale.html)
+[![Bioc downloads](https://bioconductor.org/shields/downloads/devel/BamScale.svg)](https://bioconductor.org/packages/stats/bioc/BamScale/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **BamScale** is a multithreaded BAM reader for R, built on the [`ompBAM`](https://bioconductor.org/packages/ompBAM) OpenMP engine. It returns the *exact* Bioconductor objects you already use — verified **byte-identical** to `Rsamtools` and `GenomicAlignments` — but decodes each file across many cores, taking the read step off the critical path in alignment-centric workflows.
 
-- **2.3–3.2× faster** single-file reads than `scanBam` / `readGAlignments`
+- **2.5–4× faster** single-file reads than `scanBam` / `readGAlignments`
 - **Drop-in**: same objects, same `ScanBamParam` filtering, same `BiocParallel` model
+- **In-reader aggregation** (0.99.14): `fragment_sizes()`, `mapq_dist()`, `bam_coverage()`, and single-pass `bam_coverage_bigwig()` fold the computation inside the reader — byte-identical results without materialising per-read objects
 - **Two parallel axes**: OpenMP `threads` *within* a file, `BiocParallel` *across* files
 - **Verified correct**: output is byte-identical to the standard tools at every thread count
 
@@ -24,17 +31,17 @@ Intel Xeon Gold 6252 (96 cores), warm page cache, median of 5 iterations. Full m
 
 | Read pattern | Comparator | Standard | BamScale | Threads | Speedup |
 | --- | --- | ---: | ---: | :---: | :---: |
-| Core alignment fields | `Rsamtools::scanBam` | 15.6 s | 6.8 s | 48 | **2.3×** |
-| `GAlignments` object | `GenomicAlignments::readGAlignments` | 10.9 s | 3.4 s | 48 | **3.2×** |
-| Sequence + base quality | `Rsamtools::scanBam` | 22.3 s | 8.1 s | 24 | **2.8×** |
+| Core alignment fields | `Rsamtools::scanBam` | 15.4 s | 6.3 s | 48 | **2.5×** |
+| `GAlignments` object | `GenomicAlignments::readGAlignments` | 10.6 s | 2.6 s | 48 | **4.0×** |
+| Sequence + base quality | `Rsamtools::scanBam` | 21.6 s | 7.0 s | 48 | **3.1×** |
 
 **End-to-end workflows** — BamScale swapped in for the read step only, every other step identical on both sides. The gain tracks how read-bound the workflow is (Amdahl's law):
 
 | Workflow | Read fraction | End-to-end speedup |
 | --- | :---: | :---: |
-| ATAC fragment-size QC | 93% | **3.7×** |
-| Coverage → `RleList` | 76% | **2.5×** |
-| Coverage → bigWig | 21% | **1.2×** |
+| ATAC fragment-size QC | 92% | **4.1×** |
+| Coverage → `RleList` | 76% | **3.3×** |
+| Coverage → bigWig | 22% | **1.2×** |
 
 Every result is measured against output verified equal to the standard tool: the ATAC fragment-size table is byte-identical to `ATACseqQC::fragSizeDist` across 49.8M reads, and the coverage `RleList` is `identical()` to `GenomicAlignments::coverage()` at every thread count.
 
@@ -90,6 +97,13 @@ sq <- bam_read(
 
 # Fast chromosome-level counts
 cnt <- bam_count(bam, threads = 4)
+
+# In-reader aggregation (0.99.14): summaries computed inside the C++ reader,
+# byte-identical to the scanBam/coverage equivalents
+fs  <- fragment_sizes(bam, threads = 4)   # paired-end fragment-size distribution
+mq  <- mapq_dist(bam, threads = 4)        # mapping-quality distribution
+cov <- bam_coverage(bam, threads = 4)     # per-base coverage RleList
+bam_coverage_bigwig(bam, "coverage.bw", threads = 4)  # single-pass BAM -> bigWig
 ```
 
 ## Output modes & compatibility
