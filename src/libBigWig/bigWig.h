@@ -6,6 +6,11 @@
 #include <inttypes.h>
 #include <zlib.h>
 
+// BamScale local modification: route all diagnostic output through R's print
+// API (REprintf) -- compiled code in an R package must not write to stdout /
+// stderr directly (R CMD check "compiled code" NOTE).
+#include <R_ext/Print.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

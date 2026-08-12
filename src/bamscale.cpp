@@ -2437,20 +2437,20 @@ std::string bam_coverage_bigwig_cpp(
   const clk::time_point t_intervals = clk::now();
 
   // Register the in-memory coverage runs so bwFinalize builds zoom levels from
-  // them instead of re-reading + decompressing the data section (byte-identical).
-  // Only in parallel mode, so parallel=FALSE stays exactly the stock libBigWig
-  // write path (a clean serial reference for byte-identity checks).
+  // them instead of re-reading + decompressing the data section. Used for BOTH
+  // the parallel and serial modes: re-reading a just-written update stream
+  // fails on Windows (UCRT is strict about write->read transitions), and the
+  // in-memory path produces byte-identical output (verified against the stock
+  // re-read path on Linux at 226M-read scale).
   std::vector<const int*> run_v(static_cast<size_t>(n_contigs));
   std::vector<const int*> run_l(static_cast<size_t>(n_contigs));
   std::vector<long> run_n(static_cast<size_t>(n_contigs));
-  if (parallel != 0) {
-    for (int c = 0; c < n_contigs; ++c) {
-      run_v[static_cast<size_t>(c)] = out_rv[static_cast<size_t>(c)].data();
-      run_l[static_cast<size_t>(c)] = out_rl[static_cast<size_t>(c)].data();
-      run_n[static_cast<size_t>(c)] = static_cast<long>(out_rv[static_cast<size_t>(c)].size());
-    }
-    bwsSetRuns(run_v.data(), run_l.data(), run_n.data());
+  for (int c = 0; c < n_contigs; ++c) {
+    run_v[static_cast<size_t>(c)] = out_rv[static_cast<size_t>(c)].data();
+    run_l[static_cast<size_t>(c)] = out_rl[static_cast<size_t>(c)].data();
+    run_n[static_cast<size_t>(c)] = static_cast<long>(out_rv[static_cast<size_t>(c)].size());
   }
+  bwsSetRuns(run_v.data(), run_l.data(), run_n.data());
 
   bwClose(fp);   // bwFinalize: parallel-flush data blocks, build index, zoom levels
   bwCleanup();

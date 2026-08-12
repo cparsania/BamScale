@@ -139,7 +139,7 @@ static int writeChromList(FILE *fp, chromList_t *cl) {
     size_t l;
 
     if(cl->nKeys > 1073676289) {
-        fprintf(stderr, "[writeChromList] Error: Currently only 1,073,676,289 contigs are supported. If you really need more then please post a request on github.\n");
+        REprintf("[writeChromList] Error: Currently only 1,073,676,289 contigs are supported. If you really need more then please post a request on github.\n");
         return 1;
     }
     nblocks = cl->nKeys/nperblock;
@@ -1465,7 +1465,7 @@ int bwFinalize(bigWigFile_t *fp) {
         if(writeZoomLevels(fp)) return 7; //This write nLevels as well
         if(bwsVerbose) {
             clock_gettime(CLOCK_MONOTONIC, &_tc);
-            fprintf(stderr, "[bwFinalize] makeZoom+constructZoomLevels(re-read)=%.1fs  writeZoomLevels(compress)=%.1fs\n",
+            REprintf("[bwFinalize] makeZoom+constructZoomLevels(re-read)=%.1fs  writeZoomLevels(compress)=%.1fs\n",
                      (_tb.tv_sec-_ta.tv_sec)+(_tb.tv_nsec-_ta.tv_nsec)*1e-9,
                      (_tc.tv_sec-_tb.tv_sec)+(_tc.tv_nsec-_tb.tv_nsec)*1e-9);
         }
