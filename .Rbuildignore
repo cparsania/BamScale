@@ -5,8 +5,8 @@
 ^\.gitignore$
 ^\.quarto$
 ^\.\.Rcheck$
-^src/Makevars$
 ^src/.*\.(o|so|dll|dylib|a|lib)$
+^inst/benchmarks/\.nfs.*$
 ^src/symbols\.rds$
 ^vignettes/benchmarking\.html$
 ^vignettes/benchmarking\.rmarkdown$

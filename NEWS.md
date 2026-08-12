@@ -52,6 +52,16 @@
   `fragment_sizes()` 5.4x vs `scanBam` + `table()`; `as = "GAlignments"` 4.8x
   vs `readGAlignments()` (and faster even single-threaded).
 
+## Bug fixes
+
+* Removed a long-standing `^src/Makevars$` entry from `.Rbuildignore` (dating to
+  the pkgdown setup): built tarballs -- including the Bioconductor builds --
+  shipped without `src/Makevars` and therefore compiled WITHOUT OpenMP (and
+  without the explicit `-lz`), silently running single-threaded when installed
+  from a tarball. In-place `R CMD INSTALL .` was unaffected, which is why local
+  installs always threaded. Tarball builds now carry the full build
+  configuration (OpenMP, zlib, `-DNOCURL`, and the bundled libBigWig objects).
+
 ## Benchmarks
 
 * `run_workflow_benchmark.R` gains first-class arms for the four new functions
