@@ -41,10 +41,11 @@ Suggests:
     knitr,
     readr,
     rmarkdown,
+    rtracklayer,
     scales,
     tibble,
     testthat (>= 3.0.0),
-    tidyr,
+    tidyr
 VignetteBuilder:
     knitr
 Config/testthat/edition: 3
