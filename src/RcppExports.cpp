@@ -59,6 +59,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// galignments_cpp
+List galignments_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const int flag_require_set, const int flag_require_unset, const int field_mask);
+RcppExport SEXP _BamScale_galignments_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP, SEXP field_maskSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::string& >::type bam_file(bam_fileSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_mapq(min_mapqSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_set(flag_require_setSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_unset(flag_require_unsetSEXP);
+    Rcpp::traits::input_parameter< const int >::type field_mask(field_maskSEXP);
+    rcpp_result_gen = Rcpp::wrap(galignments_cpp(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset, field_mask));
+    return rcpp_result_gen;
+END_RCPP
+}
 // count_bam_cpp
 DataFrame count_bam_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const bool include_unmapped, const int flag_require_set, const int flag_require_unset, const CharacterVector& which_seqnames, const IntegerVector& which_starts, const IntegerVector& which_ends);
 RcppExport SEXP _BamScale_count_bam_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP include_unmappedSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP, SEXP which_seqnamesSEXP, SEXP which_startsSEXP, SEXP which_endsSEXP) {
@@ -78,12 +94,84 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// fragment_sizes_cpp
+DataFrame fragment_sizes_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const int flag_require_set, const int flag_require_unset, const int max_fragment, const int drop_mate_unmapped);
+RcppExport SEXP _BamScale_fragment_sizes_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP, SEXP max_fragmentSEXP, SEXP drop_mate_unmappedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::string& >::type bam_file(bam_fileSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_mapq(min_mapqSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_set(flag_require_setSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_unset(flag_require_unsetSEXP);
+    Rcpp::traits::input_parameter< const int >::type max_fragment(max_fragmentSEXP);
+    Rcpp::traits::input_parameter< const int >::type drop_mate_unmapped(drop_mate_unmappedSEXP);
+    rcpp_result_gen = Rcpp::wrap(fragment_sizes_cpp(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset, max_fragment, drop_mate_unmapped));
+    return rcpp_result_gen;
+END_RCPP
+}
+// mapq_dist_cpp
+DataFrame mapq_dist_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const int flag_require_set, const int flag_require_unset);
+RcppExport SEXP _BamScale_mapq_dist_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::string& >::type bam_file(bam_fileSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_mapq(min_mapqSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_set(flag_require_setSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_unset(flag_require_unsetSEXP);
+    rcpp_result_gen = Rcpp::wrap(mapq_dist_cpp(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset));
+    return rcpp_result_gen;
+END_RCPP
+}
+// bam_coverage_cpp
+List bam_coverage_cpp(const std::string& bam_file, const int n_threads, const int min_mapq, const int flag_require_set, const int flag_require_unset);
+RcppExport SEXP _BamScale_bam_coverage_cpp(SEXP bam_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::string& >::type bam_file(bam_fileSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_mapq(min_mapqSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_set(flag_require_setSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_unset(flag_require_unsetSEXP);
+    rcpp_result_gen = Rcpp::wrap(bam_coverage_cpp(bam_file, n_threads, min_mapq, flag_require_set, flag_require_unset));
+    return rcpp_result_gen;
+END_RCPP
+}
+// bam_coverage_bigwig_cpp
+std::string bam_coverage_bigwig_cpp(const std::string& bam_file, const std::string& out_file, const int n_threads, const int min_mapq, const int flag_require_set, const int flag_require_unset, const int n_zooms, const int compress_level, const int parallel, const int verbose);
+RcppExport SEXP _BamScale_bam_coverage_bigwig_cpp(SEXP bam_fileSEXP, SEXP out_fileSEXP, SEXP n_threadsSEXP, SEXP min_mapqSEXP, SEXP flag_require_setSEXP, SEXP flag_require_unsetSEXP, SEXP n_zoomsSEXP, SEXP compress_levelSEXP, SEXP parallelSEXP, SEXP verboseSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const std::string& >::type bam_file(bam_fileSEXP);
+    Rcpp::traits::input_parameter< const std::string& >::type out_file(out_fileSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< const int >::type min_mapq(min_mapqSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_set(flag_require_setSEXP);
+    Rcpp::traits::input_parameter< const int >::type flag_require_unset(flag_require_unsetSEXP);
+    Rcpp::traits::input_parameter< const int >::type n_zooms(n_zoomsSEXP);
+    Rcpp::traits::input_parameter< const int >::type compress_level(compress_levelSEXP);
+    Rcpp::traits::input_parameter< const int >::type parallel(parallelSEXP);
+    Rcpp::traits::input_parameter< const int >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(bam_coverage_bigwig_cpp(bam_file, out_file, n_threads, min_mapq, flag_require_set, flag_require_unset, n_zooms, compress_level, parallel, verbose));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_BamScale_decode_compact_seq_cpp", (DL_FUNC) &_BamScale_decode_compact_seq_cpp, 2},
     {"_BamScale_decode_compact_qual_cpp", (DL_FUNC) &_BamScale_decode_compact_qual_cpp, 1},
     {"_BamScale_read_bam_cpp", (DL_FUNC) &_BamScale_read_bam_cpp, 16},
+    {"_BamScale_galignments_cpp", (DL_FUNC) &_BamScale_galignments_cpp, 6},
     {"_BamScale_count_bam_cpp", (DL_FUNC) &_BamScale_count_bam_cpp, 9},
+    {"_BamScale_fragment_sizes_cpp", (DL_FUNC) &_BamScale_fragment_sizes_cpp, 7},
+    {"_BamScale_mapq_dist_cpp", (DL_FUNC) &_BamScale_mapq_dist_cpp, 5},
+    {"_BamScale_bam_coverage_cpp", (DL_FUNC) &_BamScale_bam_coverage_cpp, 5},
+    {"_BamScale_bam_coverage_bigwig_cpp", (DL_FUNC) &_BamScale_bam_coverage_bigwig_cpp, 10},
     {NULL, NULL, 0}
 };
 

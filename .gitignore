@@ -22,6 +22,10 @@ src/*.o
 src/*.so
 src/*.dll
 src/*.dylib
+src/**/*.o
+src/**/*.so
+src/**/*.dll
+src/**/*.dylib
 src/*.a
 src/*.lib
 
@@ -72,7 +76,6 @@ inst/benchmarks/benchmark_presentation.qmd
 inst/benchmarks/manuscript_figs.R
 scripts/citation_to_ris.R
 scripts/manuscript_figs.R
-# Private Nature Methods manuscript (personal draft; not part of the package)
-inst/benchmarks/bamscale_naturemethods.qmd
-inst/benchmarks/references.bib
-inst/benchmarks/nature.csl
+# Private manuscript (personal draft; not part of the package, never pushed)
+manuscript/
+inst/benchmarks/run_manuscript_final.sh

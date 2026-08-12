@@ -8,12 +8,29 @@ using namespace Rcpp;
 #include <ompBAM.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+// Vendored libBigWig (MIT, Devon Ryan) for native bigWig writing. Built with
+// -DNOCURL (local files only); the header is guarded with extern "C".
+#include "libBigWig/bigWig.h"
+
+// libBigWig zlib deflate level (local addition in bwWrite.c). -1 == zlib default
+// (level 6); lower values trade file size for a faster write.
+extern "C" { extern int bwCompressLevel; }
+// Enable/disable deferred parallel block compression in the vendored writer.
+extern "C" { void bwsBeginParallel(int on); }
+// When != 0, the vendored writer prints bwFinalize phase timings to stderr.
+extern "C" { extern int bwsVerbose; }
+// Register in-memory coverage runs so zoom levels are built without re-reading the
+// just-written data (NULL to clear). Runs are the RLE (values, lengths) per contig.
+extern "C" { void bwsSetRuns(const int** rv, const int** rl, const long* n); }
 
 // Defined in xstringset_build.c: construct Biostrings XStringSet objects
 // (DNAStringSet / PhredQuality) directly from a shared byte buffer via the
@@ -151,6 +168,18 @@ List raw_list_from_bytes(const std::vector<std::vector<uint8_t> >& buffers) {
   return out;
 }
 
+// Reserve with geometric growth: only reallocate when capacity is insufficient,
+// and then grow to at least 2x the current capacity. A plain reserve(target)
+// with a per-batch increasing target reallocates to exactly `target` every
+// batch, copying ALL accumulated data each time -- O(batches x total) copying
+// that dominated the read loop's serial merge (~163s on a 229M-read file).
+template <typename T>
+static inline void bs_grow_reserve(std::vector<T>& v, const size_t target) {
+  if (target > v.capacity()) {
+    v.reserve(std::max(target, v.capacity() * 2U));
+  }
+}
+
 struct PackedStringColumn {
   std::vector<size_t> offsets;
   std::vector<size_t> lengths;
@@ -164,11 +193,11 @@ struct PackedStringColumn {
 
   void reserve(const size_t n_strings, const size_t n_bytes) {
     if (n_strings > 0U) {
-      offsets.reserve(n_strings);
-      lengths.reserve(n_strings);
+      bs_grow_reserve(offsets, n_strings);
+      bs_grow_reserve(lengths, n_strings);
     }
     if (n_bytes > 0U) {
-      bytes.reserve(n_bytes);
+      bs_grow_reserve(bytes, n_bytes);
     }
   }
 
@@ -196,9 +225,9 @@ struct PackedStringColumn {
 
   void append_from(const PackedStringColumn& other) {
     const size_t base = bytes.size();
-    offsets.reserve(offsets.size() + other.offsets.size());
-    lengths.reserve(lengths.size() + other.lengths.size());
-    bytes.reserve(bytes.size() + other.bytes.size());
+    bs_grow_reserve(offsets, offsets.size() + other.offsets.size());
+    bs_grow_reserve(lengths, lengths.size() + other.lengths.size());
+    bs_grow_reserve(bytes, bytes.size() + other.bytes.size());
 
     for (size_t i = 0; i < other.offsets.size(); ++i) {
       offsets.push_back(base + other.offsets[i]);
@@ -343,6 +372,62 @@ CharacterVector packed_strings_to_character(const PackedStringColumn& packed) {
         i,
         Rf_mkCharLen(packed.bytes.data() + offset, static_cast<int>(len))
       );
+    }
+  }
+
+  UNPROTECT(1);
+  return CharacterVector(out);
+}
+
+// Like packed_strings_to_character, but with a small direct-mapped CHARSXP cache
+// in front of Rf_mkCharLen. Intended for highly repetitive columns (CIGAR: a few
+// distinct strings cover almost all reads), where it replaces R's global
+// string-cache hash probe with a local table hit. Correctness never depends on
+// the cache: mkCharLen interns via R's global CHARSXP cache, so hit, miss and
+// collision all yield identical CHARSXPs.
+// GC safety: `out` is PROTECTed for the cache's whole lifetime and every cached
+// SEXP is installed into `out` via SET_STRING_ELT *before* it is cached, so each
+// cached CHARSXP stays reachable from `out` (STRSXP elements are strong
+// references and are never cleared). The cache is call-local (never static) and
+// runs on the main thread only.
+CharacterVector packed_strings_to_character_cached(const PackedStringColumn& packed) {
+  const R_xlen_t n = static_cast<R_xlen_t>(packed.size());
+  SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+  SEXP empty = Rf_mkCharLen("", 0);
+
+  struct Entry { uint32_t len; char str[24]; SEXP cs; };
+  // 2^20 slots (~32 MB, transient): comfortably above the distinct-value count of
+  // real CIGAR columns (e.g. 667k distinct in a 226M-read ATAC BAM), so the
+  // direct-mapped table does not thrash.
+  std::vector<Entry> cache(static_cast<size_t>(1) << 20);  // len==0 -> empty slot
+
+  for (R_xlen_t i = 0; i < n; ++i) {
+    const size_t idx = static_cast<size_t>(i);
+    const char* p = packed.bytes.data() + packed.offsets[idx];
+    const size_t len = packed.lengths[idx];
+    if (len == 0U) {
+      SET_STRING_ELT(out, i, empty);
+      continue;
+    }
+    if (len <= 23U) {
+      uint32_t h = 2166136261u;  // FNV-1a over (bytes, len)
+      for (size_t k = 0; k < len; ++k) {
+        h ^= static_cast<uint8_t>(p[k]);
+        h *= 16777619u;
+      }
+      Entry& e = cache[h & 0xFFFFFu];
+      if (e.len == static_cast<uint32_t>(len) && std::memcmp(e.str, p, len) == 0) {
+        SET_STRING_ELT(out, i, e.cs);  // hit: no R API call at all
+        continue;
+      }
+      SEXP cs = Rf_mkCharLen(p, static_cast<int>(len));
+      SET_STRING_ELT(out, i, cs);      // root in `out` BEFORE caching
+      e.len = static_cast<uint32_t>(len);
+      std::memcpy(e.str, p, len);
+      e.cs = cs;                        // direct-mapped overwrite
+    } else {
+      // Long CIGARs (exotic / long-read) fall back to the plain path.
+      SET_STRING_ELT(out, i, Rf_mkCharLen(p, static_cast<int>(len)));
     }
   }
 
@@ -540,7 +625,7 @@ struct TagColumn {
     if (kind == TAG_STR) {
       str.reserve(hint, 0U);
     } else {
-      num.reserve(hint);
+      bs_grow_reserve(num, hint);
     }
   }
 
@@ -687,6 +772,36 @@ IntegerVector strand_factor_from_codes(const std::vector<int>& strand_codes) {
   out.attr("levels") = CharacterVector::create("+", "-", "*");
   out.attr("class") = "factor";
   return out;
+}
+
+// Format a read's CIGAR into `dest` by walking the raw packed ops directly.
+// Equivalent to pbam1_t::cigar(std::string&) but with manual digit formatting
+// into a stack buffer: the ompBAM helper routes every op length through
+// std::to_string, whose per-op heap allocation serialises 48 threads on the
+// malloc arena (~450M allocations on a 229M-read file). `dest` keeps its
+// capacity across reads, so the steady state allocates nothing.
+static inline void ga_format_cigar(pbam1_t& read, std::string& dest) {
+  static const char GA_CIGAR_OPS[] = "MIDNSHP=X";
+  dest.clear();
+  const uint32_t nop = read.cigar_size();
+  const uint32_t* cig = read.cigar();
+  if (cig == NULL) return;
+  for (uint32_t k = 0; k < nop; ++k) {
+    uint32_t v = cig[k] >> 4;
+    const uint32_t op = cig[k] & 0xFU;
+    char tmp[12];
+    int t = 12;
+    if (v == 0U) {
+      tmp[--t] = '0';
+    } else {
+      while (v > 0U) {
+        tmp[--t] = static_cast<char>('0' + (v % 10U));
+        v /= 10U;
+      }
+    }
+    dest.append(tmp + t, static_cast<size_t>(12 - t));
+    dest.push_back(op <= 8U ? GA_CIGAR_OPS[op] : '?');
+  }
 }
 
 struct QueryInterval {
@@ -1120,8 +1235,7 @@ List read_bam_cpp(
           local.mapq.push_back(this_mapq);
         }
         if (need_cigar) {
-          cigar_scratch.clear();
-          read.cigar(cigar_scratch);
+          ga_format_cigar(read, cigar_scratch);
           local.cigar.append(cigar_scratch);
         }
         if (need_mrnm) {
@@ -1195,12 +1309,12 @@ List read_bam_cpp(
         }
         qname_out.reserve(target, qname_out.bytes_size() + batch_qname_bytes);
       }
-      if (need_flag) flag_out.reserve(target);
-      if (need_rname) rname_out.reserve(target);
-      if (need_pos) pos_out.reserve(target);
-      if (need_strand) strand_out.reserve(target);
-      if (need_qwidth) qwidth_out.reserve(target);
-      if (need_mapq) mapq_out.reserve(target);
+      if (need_flag) bs_grow_reserve(flag_out, target);
+      if (need_rname) bs_grow_reserve(rname_out, target);
+      if (need_pos) bs_grow_reserve(pos_out, target);
+      if (need_strand) bs_grow_reserve(strand_out, target);
+      if (need_qwidth) bs_grow_reserve(qwidth_out, target);
+      if (need_mapq) bs_grow_reserve(mapq_out, target);
       if (need_cigar) {
         size_t batch_cigar_bytes = 0U;
         for (unsigned int tid = 0; tid < threads; ++tid) {
@@ -1208,12 +1322,12 @@ List read_bam_cpp(
         }
         cigar_out.reserve(target, cigar_out.bytes_size() + batch_cigar_bytes);
       }
-      if (need_mrnm) mrnm_out.reserve(target);
-      if (need_mpos) mpos_out.reserve(target);
-      if (need_isize) isize_out.reserve(target);
+      if (need_mrnm) bs_grow_reserve(mrnm_out, target);
+      if (need_mpos) bs_grow_reserve(mpos_out, target);
+      if (need_isize) bs_grow_reserve(isize_out, target);
       if (need_seq) {
         if (need_seq_compact) {
-          seq_raw_out.reserve(target);
+          bs_grow_reserve(seq_raw_out, target);
         } else {
           size_t batch_seq_bytes = 0U;
           for (unsigned int tid = 0; tid < threads; ++tid) {
@@ -1224,7 +1338,7 @@ List read_bam_cpp(
       }
       if (need_qual) {
         if (need_qual_compact) {
-          qual_raw_out.reserve(target);
+          bs_grow_reserve(qual_raw_out, target);
         } else {
           size_t batch_qual_bytes = 0U;
           for (unsigned int tid = 0; tid < threads; ++tid) {
@@ -1233,7 +1347,7 @@ List read_bam_cpp(
           qual_out.reserve(target, qual_out.bytes_size() + batch_qual_bytes);
         }
       }
-      if (with_which_label) which_label_out.reserve(target);
+      if (with_which_label) bs_grow_reserve(which_label_out, target);
       for (size_t j = 0; j < tag_names.size(); ++j) {
         tag_out[j].reserve(target);
       }
@@ -1372,6 +1486,299 @@ List read_bam_cpp(
   return out;
 }
 
+// Append a per-thread RLE (cv/cl) onto the global RLE (gv/gl), coalescing across
+// the boundary so runs stay maximal -- S4Vectors::Rle(values, lengths) does not
+// re-coalesce, and GAlignments slots require fully coalesced runs for identical().
+static void ga_append_runs(
+    std::vector<int>& gv, std::vector<int>& gl,
+    const std::vector<int>& cv, const std::vector<int>& cl
+) {
+  size_t i = 0;
+  if (!gv.empty() && !cv.empty() && gv.back() == cv[0]) {
+    gl.back() += cl[0];
+    i = 1;
+  }
+  gv.insert(gv.end(), cv.begin() + i, cv.end());
+  gl.insert(gl.end(), cl.begin() + i, cl.end());
+}
+
+// Fast path for bam_read(as = "GAlignments"): assemble the GAlignments slots
+// entirely in C++ (SpliceWiz-style) instead of materialising a full data.frame
+// and re-processing it in R. Differences from read_bam_cpp:
+//   - drops unmapped reads (flag 0x4 / ref_id < 0) unconditionally, exactly like
+//     GenomicAlignments::readGAlignments;
+//   - seqnames and strand are accumulated as run-length pairs inside the OpenMP
+//     region (coordinate-sorted input -> few runs) and stitched at merge, so no
+//     per-read factor vectors and no R-side Rle() scan;
+//   - the cigar column is materialised with the CHARSXP hot-cache
+//     (packed_strings_to_character_cached);
+//   - only mcols fields (field_mask bits) are captured; core slots are implied.
+// Row order: identical to read_bam_cpp -- serial fillReads batches, contiguous
+// per-thread segments in increasing file offset, merged in tid order.
+// [[Rcpp::export]]
+List galignments_cpp(
+    const std::string& bam_file,
+    const int n_threads,
+    const int min_mapq,
+    const int flag_require_set,
+    const int flag_require_unset,
+    const int field_mask
+) {
+  const unsigned int threads = clamp_threads(n_threads);
+  const int min_mapq_clamped = std::max(0, min_mapq);
+  const uint32_t flag_set = static_cast<uint32_t>(std::max(0, flag_require_set));
+  const uint32_t flag_unset = static_cast<uint32_t>(std::max(0, flag_require_unset));
+  const std::chrono::steady_clock::time_point ga_t_start = std::chrono::steady_clock::now();
+
+  const int mask = std::max(0, field_mask);
+  const bool need_qname = (mask & (1 << 0)) != 0;
+  const bool need_flag = (mask & (1 << 1)) != 0;
+  const bool need_qwidth = (mask & (1 << 5)) != 0;
+  const bool need_mapq = (mask & (1 << 6)) != 0;
+  const bool need_mrnm = (mask & (1 << 8)) != 0;
+  const bool need_mpos = (mask & (1 << 9)) != 0;
+  const bool need_isize = (mask & (1 << 10)) != 0;
+
+  pbam_in inbam;
+  if (inbam.openFile(bam_file, threads) != 0) {
+    stop("Failed to open BAM file");
+  }
+  std::vector<std::string> chr_names;
+  std::vector<uint32_t> chr_lens;
+  const int chrom_count = inbam.obtainChrs(chr_names, chr_lens);
+  if (chrom_count <= 0) {
+    stop("Failed to read BAM header");
+  }
+
+  std::vector<int> pos_out;
+  PackedStringColumn cigar_out;
+  std::vector<int> sq_val_out, sq_len_out;   // seqnames runs (1-based codes)
+  std::vector<int> st_val_out, st_len_out;   // strand runs (1="+", 2="-")
+  PackedStringColumn qname_out;
+  std::vector<int> flag_out, qwidth_out, mapq_out, mrnm_out, mpos_out, isize_out;
+  size_t n_records_total = 0U;
+
+  struct alignas(64) GaChunk {
+    std::vector<int> pos;
+    PackedStringColumn cigar;
+    std::vector<int> sq_val, sq_len;
+    std::vector<int> st_val, st_len;
+    PackedStringColumn qname;
+    std::vector<int> flag, qwidth, mapq, mrnm, mpos, isize;
+    size_t n_records = 0U;
+  };
+  std::vector<GaChunk> chunk_data(threads);
+
+  double t_fill_acc = 0.0, t_par_acc = 0.0, t_merge_acc = 0.0;
+  typedef std::chrono::steady_clock prof_clk;
+
+  while (true) {
+    const prof_clk::time_point p0 = prof_clk::now();
+    const int state = inbam.fillReads();
+    if (state == 1) break;
+    if (state == -1 || inbam.GetErrorState() == -1) {
+      stop("BAM decompression failed while reading alignments");
+    }
+    const prof_clk::time_point p1 = prof_clk::now();
+    t_fill_acc += std::chrono::duration<double>(p1 - p0).count();
+
+    for (unsigned int tid = 0; tid < threads; ++tid) {
+      GaChunk& local = chunk_data[tid];
+      local.n_records = 0U;
+      local.pos.clear();
+      local.cigar.clear();
+      local.sq_val.clear(); local.sq_len.clear();
+      local.st_val.clear(); local.st_len.clear();
+      local.qname.clear();
+      local.flag.clear(); local.qwidth.clear(); local.mapq.clear();
+      local.mrnm.clear(); local.mpos.clear(); local.isize.clear();
+
+      const size_t bytes_hint = inbam.remainingThreadReadsBuffer(tid);
+      const size_t record_hint = std::max(static_cast<size_t>(1U), bytes_hint / 128U);
+      local.pos.reserve(record_hint);
+      local.cigar.reserve(record_hint, 0U);
+      if (need_qname) local.qname.reserve(record_hint, 0U);
+      if (need_flag) local.flag.reserve(record_hint);
+      if (need_qwidth) local.qwidth.reserve(record_hint);
+      if (need_mapq) local.mapq.reserve(record_hint);
+      if (need_mrnm) local.mrnm.reserve(record_hint);
+      if (need_mpos) local.mpos.reserve(record_hint);
+      if (need_isize) local.isize.reserve(record_hint);
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(threads) schedule(static, 1)
+#endif
+    for (unsigned int tid = 0; tid < threads; ++tid) {
+      GaChunk& local = chunk_data[tid];
+      std::string cigar_scratch;
+      while (true) {
+        pbam1_t read(inbam.supplyRead(tid));
+        if (!read.validate()) break;
+
+        const uint32_t flag = read.flag();
+        if ((flag & flag_set) != flag_set) continue;
+        if ((flag & flag_unset) != 0U) continue;
+
+        int this_mapq = 0;
+        if (min_mapq_clamped > 0 || need_mapq) {
+          this_mapq = static_cast<int>(read.mapq());
+          if (this_mapq < min_mapq_clamped) continue;
+        }
+
+        // GAlignments keeps mapped reads only (readGAlignments drops flag 0x4).
+        const int32_t ref_id = read.refID();
+        if (ref_id < 0 || ref_id >= chrom_count || (flag & 0x4U) != 0U) continue;
+
+        local.n_records++;
+
+        local.pos.push_back(static_cast<int>(read.pos()) + 1);
+
+        const int sq_code = static_cast<int>(ref_id) + 1;         // 1-based factor code
+        if (!local.sq_val.empty() && local.sq_val.back() == sq_code) {
+          ++local.sq_len.back();
+        } else {
+          local.sq_val.push_back(sq_code);
+          local.sq_len.push_back(1);
+        }
+        const int st_code = ((flag & 0x10U) != 0U) ? 2 : 1;       // "+"=1, "-"=2
+        if (!local.st_val.empty() && local.st_val.back() == st_code) {
+          ++local.st_len.back();
+        } else {
+          local.st_val.push_back(st_code);
+          local.st_len.push_back(1);
+        }
+
+        ga_format_cigar(read, cigar_scratch);
+        local.cigar.append(cigar_scratch);
+
+        if (need_qname) {
+          const char* qname_ptr = read.read_name();
+          const uint8_t qname_len = read.l_read_name();
+          local.qname.append(
+            qname_ptr,
+            qname_len > 0 ? static_cast<size_t>(qname_len - 1) : 0U
+          );
+        }
+        if (need_flag) local.flag.push_back(static_cast<int>(flag));
+        if (need_qwidth) local.qwidth.push_back(static_cast<int>(read.l_seq()));
+        if (need_mapq) local.mapq.push_back(this_mapq);
+        if (need_mrnm) {
+          const int32_t next_ref_id = read.next_refID();
+          local.mrnm.push_back(
+            (next_ref_id >= 0 && next_ref_id < chrom_count) ? static_cast<int>(next_ref_id) : -1
+          );
+        }
+        if (need_mpos) {
+          const int32_t next_pos = read.next_pos();
+          local.mpos.push_back(next_pos >= 0 ? static_cast<int>(next_pos) + 1 : NA_INTEGER);
+        }
+        if (need_isize) local.isize.push_back(static_cast<int>(read.tlen()));
+      }
+    }
+    const prof_clk::time_point p2 = prof_clk::now();
+    t_par_acc += std::chrono::duration<double>(p2 - p1).count();
+
+    size_t batch_records = 0U;
+    for (unsigned int tid = 0; tid < threads; ++tid) {
+      batch_records += chunk_data[tid].n_records;
+    }
+
+    if (batch_records > 0U) {
+      if (n_records_total + batch_records > static_cast<size_t>(2147483647)) {
+        stop("Result would exceed 2^31-1 records; use `param` to restrict the query");
+      }
+      const size_t target = n_records_total + batch_records;
+      bs_grow_reserve(pos_out, target);
+      size_t batch_cigar_bytes = 0U;
+      for (unsigned int tid = 0; tid < threads; ++tid) {
+        batch_cigar_bytes += chunk_data[tid].cigar.bytes_size();
+      }
+      cigar_out.reserve(target, cigar_out.bytes_size() + batch_cigar_bytes);
+      if (need_qname) {
+        size_t batch_qname_bytes = 0U;
+        for (unsigned int tid = 0; tid < threads; ++tid) {
+          batch_qname_bytes += chunk_data[tid].qname.bytes_size();
+        }
+        qname_out.reserve(target, qname_out.bytes_size() + batch_qname_bytes);
+      }
+      if (need_flag) bs_grow_reserve(flag_out, target);
+      if (need_qwidth) bs_grow_reserve(qwidth_out, target);
+      if (need_mapq) bs_grow_reserve(mapq_out, target);
+      if (need_mrnm) bs_grow_reserve(mrnm_out, target);
+      if (need_mpos) bs_grow_reserve(mpos_out, target);
+      if (need_isize) bs_grow_reserve(isize_out, target);
+    }
+
+    for (unsigned int tid = 0; tid < threads; ++tid) {
+      GaChunk& local = chunk_data[tid];
+      n_records_total += local.n_records;
+
+      pos_out.insert(pos_out.end(), local.pos.begin(), local.pos.end());
+      cigar_out.append_from(local.cigar);
+      ga_append_runs(sq_val_out, sq_len_out, local.sq_val, local.sq_len);
+      ga_append_runs(st_val_out, st_len_out, local.st_val, local.st_len);
+
+      if (need_qname) qname_out.append_from(local.qname);
+      if (need_flag) flag_out.insert(flag_out.end(), local.flag.begin(), local.flag.end());
+      if (need_qwidth) qwidth_out.insert(qwidth_out.end(), local.qwidth.begin(), local.qwidth.end());
+      if (need_mapq) mapq_out.insert(mapq_out.end(), local.mapq.begin(), local.mapq.end());
+      if (need_mrnm) mrnm_out.insert(mrnm_out.end(), local.mrnm.begin(), local.mrnm.end());
+      if (need_mpos) mpos_out.insert(mpos_out.end(), local.mpos.begin(), local.mpos.end());
+      if (need_isize) isize_out.insert(isize_out.end(), local.isize.begin(), local.isize.end());
+    }
+    t_merge_acc += std::chrono::duration<double>(prof_clk::now() - p2).count();
+  }
+
+  inbam.closeFile();
+
+  typedef std::chrono::steady_clock ga_clk;
+  const bool ga_profile = (std::getenv("BAMSCALE_GA_PROFILE") != NULL);
+  if (ga_profile) {
+    REprintf("[galignments_cpp/loop] fillReads(decompress)=%.1fs  parallel_fill=%.1fs  serial_merge=%.1fs\n",
+             t_fill_acc, t_par_acc, t_merge_acc);
+  }
+  const ga_clk::time_point t_loop_done = ga_clk::now();
+
+  List mcols;
+  if (need_qname) mcols["qname"] = packed_strings_to_character(qname_out);
+  if (need_flag) mcols["flag"] = wrap(flag_out);
+  if (need_qwidth) mcols["qwidth"] = wrap(qwidth_out);
+  if (need_mapq) mcols["mapq"] = wrap(mapq_out);
+  if (need_mrnm) mcols["mrnm"] = factor_from_ids(mrnm_out, chr_names);
+  if (need_mpos) mcols["mpos"] = wrap(mpos_out);
+  if (need_isize) mcols["isize"] = wrap(isize_out);
+  const ga_clk::time_point t_mcols_done = ga_clk::now();
+
+  CharacterVector cigar_col = packed_strings_to_character_cached(cigar_out);
+  const ga_clk::time_point t_cigar_done = ga_clk::now();
+
+  List out = List::create(
+    _["n"] = static_cast<int>(n_records_total),
+    _["seqnames_runval"] = wrap(sq_val_out),
+    _["seqnames_runlen"] = wrap(sq_len_out),
+    _["strand_runval"] = wrap(st_val_out),
+    _["strand_runlen"] = wrap(st_len_out),
+    _["start"] = wrap(pos_out),
+    _["cigar"] = cigar_col,
+    _["mcols"] = mcols,
+    _["seqnames_header"] = wrap(chr_names),
+    _["seqlengths_header"] = wrap(chr_lens)
+  );
+
+  if (ga_profile) {
+    const ga_clk::time_point t_end = ga_clk::now();
+    REprintf("[galignments_cpp] read_loop+merge=%.1fs  mcols=%.1fs  cigar_strsxp=%.1fs  payload_wrap=%.1fs  total=%.1fs\n",
+             std::chrono::duration<double>(t_loop_done - ga_t_start).count(),
+             std::chrono::duration<double>(t_mcols_done - t_loop_done).count(),
+             std::chrono::duration<double>(t_cigar_done - t_mcols_done).count(),
+             std::chrono::duration<double>(t_end - t_cigar_done).count(),
+             std::chrono::duration<double>(t_end - ga_t_start).count());
+  }
+
+  return out;
+}
+
 // [[Rcpp::export]]
 DataFrame count_bam_cpp(
     const std::string& bam_file,
@@ -1502,4 +1909,560 @@ DataFrame count_bam_cpp(
     _["count"] = count,
     _["stringsAsFactors"] = false
   );
+}
+
+// Aggregate the fragment-size (abs(TLEN)) distribution entirely in C++ (SpliceWiz
+// style): the per-read insert size is folded into a per-thread histogram inside the
+// OpenMP region and never crosses into R. Only the compact (fragment_size, count)
+// table is returned -- no 100M+-element R vector, no R-level table().
+// [[Rcpp::export]]
+DataFrame fragment_sizes_cpp(
+    const std::string& bam_file,
+    const int n_threads,
+    const int min_mapq,
+    const int flag_require_set,
+    const int flag_require_unset,
+    const int max_fragment,
+    const int drop_mate_unmapped
+) {
+  const unsigned int threads = clamp_threads(n_threads);
+  const int min_mapq_clamped = std::max(0, min_mapq);
+  const uint32_t flag_set = static_cast<uint32_t>(std::max(0, flag_require_set));
+  const uint32_t flag_unset = static_cast<uint32_t>(std::max(0, flag_require_unset));
+  const long cap = std::max(1L, static_cast<long>(max_fragment));
+  const size_t dense_n = static_cast<size_t>(cap) + 1;
+
+  pbam_in inbam;
+  if (inbam.openFile(bam_file, threads) != 0) {
+    stop("Failed to open BAM file");
+  }
+  std::vector<std::string> chr_names;
+  std::vector<uint32_t> chr_lens;
+  if (inbam.obtainChrs(chr_names, chr_lens) <= 0) {
+    stop("Failed to read BAM header");
+  }
+
+  // Per-thread accumulators: a dense histogram for [0, cap] (fast direct index)
+  // plus an overflow map for the rare abs(TLEN) > cap. No two threads share a slot.
+  std::vector<std::vector<uint64_t> > dense(threads, std::vector<uint64_t>(dense_n, 0ULL));
+  std::vector<std::unordered_map<long, uint64_t> > overflow(threads);
+
+  while (true) {
+    const int state = inbam.fillReads();
+    if (state == 1) break;
+    if (state == -1 || inbam.GetErrorState() == -1) {
+      stop("BAM decompression failed while computing fragment sizes");
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(threads) schedule(static, 1)
+#endif
+    for (unsigned int tid = 0; tid < threads; ++tid) {
+      std::vector<uint64_t>& d = dense[tid];
+      std::unordered_map<long, uint64_t>& ov = overflow[tid];
+      while (true) {
+        pbam1_t read(inbam.supplyRead(tid));
+        if (!read.validate()) break;
+
+        const uint32_t flag = read.flag();
+        if ((flag & flag_set) != flag_set) continue;
+        if ((flag & flag_unset) != 0U) continue;
+
+        const int this_mapq = static_cast<int>(read.mapq());
+        if (this_mapq < min_mapq_clamped) continue;
+
+        // scanBam reports isize = NA when the mate is unmapped (0x8) -- no defined
+        // template length -- so table(abs(isize)) drops those reads. Replicate that
+        // to stay byte-identical to the standard fragment-size distribution.
+        if (drop_mate_unmapped != 0 && (flag & 0x8U) != 0U) continue;
+
+        long v = static_cast<long>(read.tlen());
+        if (v < 0) v = -v;
+        if (v <= cap) {
+          d[static_cast<size_t>(v)]++;
+        } else {
+          ov[v]++;
+        }
+      }
+    }
+  }
+
+  inbam.closeFile();
+
+  // Merge per-thread histograms.
+  std::vector<uint64_t> total_dense(dense_n, 0ULL);
+  for (unsigned int tid = 0; tid < threads; ++tid) {
+    const std::vector<uint64_t>& d = dense[tid];
+    for (size_t i = 0; i < dense_n; ++i) total_dense[i] += d[i];
+  }
+  std::unordered_map<long, uint64_t> total_ov;
+  for (unsigned int tid = 0; tid < threads; ++tid) {
+    for (std::unordered_map<long, uint64_t>::const_iterator it = overflow[tid].begin();
+         it != overflow[tid].end(); ++it) {
+      total_ov[it->first] += it->second;
+    }
+  }
+  std::vector<long> ov_keys;
+  ov_keys.reserve(total_ov.size());
+  for (std::unordered_map<long, uint64_t>::const_iterator it = total_ov.begin();
+       it != total_ov.end(); ++it) {
+    ov_keys.push_back(it->first);
+  }
+  std::sort(ov_keys.begin(), ov_keys.end());
+
+  // Emit only non-empty bins, ascending by fragment size.
+  std::vector<int> frag;
+  std::vector<double> cnt;
+  for (size_t i = 0; i < dense_n; ++i) {
+    if (total_dense[i] > 0ULL) {
+      frag.push_back(static_cast<int>(i));
+      cnt.push_back(static_cast<double>(total_dense[i]));
+    }
+  }
+  for (size_t k = 0; k < ov_keys.size(); ++k) {
+    frag.push_back(static_cast<int>(ov_keys[k]));
+    cnt.push_back(static_cast<double>(total_ov[ov_keys[k]]));
+  }
+
+  return DataFrame::create(
+    _["fragment_size"] = frag,
+    _["count"] = cnt,
+    _["stringsAsFactors"] = false
+  );
+}
+
+// Mapping-quality distribution, aggregated entirely in C++ (same design as
+// fragment_sizes_cpp): each thread tallies MAPQ into a private 256-slot histogram
+// inside the OpenMP region; only the compact (mapq, count) table crosses into R.
+// No per-read R vector is ever materialized.
+// [[Rcpp::export]]
+DataFrame mapq_dist_cpp(
+    const std::string& bam_file,
+    const int n_threads,
+    const int min_mapq,
+    const int flag_require_set,
+    const int flag_require_unset
+) {
+  const unsigned int threads = clamp_threads(n_threads);
+  const int min_mapq_clamped = std::max(0, min_mapq);
+  const uint32_t flag_set = static_cast<uint32_t>(std::max(0, flag_require_set));
+  const uint32_t flag_unset = static_cast<uint32_t>(std::max(0, flag_require_unset));
+  const size_t NBIN = 256;  // MAPQ is an 8-bit field (0-255)
+
+  pbam_in inbam;
+  if (inbam.openFile(bam_file, threads) != 0) {
+    stop("Failed to open BAM file");
+  }
+  std::vector<std::string> chr_names;
+  std::vector<uint32_t> chr_lens;
+  if (inbam.obtainChrs(chr_names, chr_lens) <= 0) {
+    stop("Failed to read BAM header");
+  }
+
+  // Per-thread dense histogram over the full MAPQ domain. No slot is shared.
+  std::vector<std::vector<uint64_t> > hist(threads, std::vector<uint64_t>(NBIN, 0ULL));
+
+  while (true) {
+    const int state = inbam.fillReads();
+    if (state == 1) break;
+    if (state == -1 || inbam.GetErrorState() == -1) {
+      stop("BAM decompression failed while computing MAPQ distribution");
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(threads) schedule(static, 1)
+#endif
+    for (unsigned int tid = 0; tid < threads; ++tid) {
+      std::vector<uint64_t>& h = hist[tid];
+      while (true) {
+        pbam1_t read(inbam.supplyRead(tid));
+        if (!read.validate()) break;
+
+        const uint32_t flag = read.flag();
+        if ((flag & flag_set) != flag_set) continue;
+        if ((flag & flag_unset) != 0U) continue;
+
+        const int mq = static_cast<int>(read.mapq());
+        if (mq < min_mapq_clamped) continue;
+        if (mq >= 0 && mq < static_cast<int>(NBIN)) h[static_cast<size_t>(mq)]++;
+      }
+    }
+  }
+
+  inbam.closeFile();
+
+  // Merge per-thread histograms.
+  std::vector<uint64_t> total(NBIN, 0ULL);
+  for (unsigned int tid = 0; tid < threads; ++tid) {
+    const std::vector<uint64_t>& h = hist[tid];
+    for (size_t i = 0; i < NBIN; ++i) total[i] += h[i];
+  }
+
+  // Emit only non-empty bins, ascending by MAPQ.
+  std::vector<int> mapq;
+  std::vector<double> cnt;
+  for (size_t i = 0; i < NBIN; ++i) {
+    if (total[i] > 0ULL) {
+      mapq.push_back(static_cast<int>(i));
+      cnt.push_back(static_cast<double>(total[i]));
+    }
+  }
+
+  return DataFrame::create(
+    _["mapq"] = mapq,
+    _["count"] = cnt,
+    _["stringsAsFactors"] = false
+  );
+}
+
+// Shared per-base coverage computation (SpliceWiz-style). Opens the BAM, walks
+// each read's CIGAR from its 0-based POS pushing +1/-1 endpoints for covering ops
+// (M/=/X/D) into a shared per-contig difference (delta) array via atomic updates
+// (N is a 0-coverage gap; I/S/H/P are ignored) -- exactly matching
+// GenomicAlignments::coverage(GAlignments), which uses grglist(drop.D.ranges =
+// FALSE) so D is covered and merges flanking M blocks. Difference-array updates
+// are commutative, so concurrent atomic +=/-= are order-independent and exact; the
+// BAM is coordinate-sorted and ompBAM hands each thread a contiguous coordinate
+// range, so cross-thread contention is low. Each contig is then prefix-summed into
+// run-length-encoded coverage (fully coalesced). Fills chr_names/chr_lens (header
+// order) and out_rv/out_rl (one int vector per contig); returns the contig count.
+// The 100M+-read GAlignments object is never built. Shared by bam_coverage_cpp
+// (-> RleList) and bam_coverage_bigwig_cpp (-> bigWig).
+static int bamscale_coverage_runs(
+    const std::string& bam_file,
+    unsigned int threads,
+    int min_mapq_clamped,
+    uint32_t flag_set,
+    uint32_t flag_unset,
+    std::vector<std::string>& chr_names,
+    std::vector<uint32_t>& chr_lens,
+    std::vector<std::vector<int> >& out_rv,
+    std::vector<std::vector<int> >& out_rl
+) {
+  pbam_in inbam;
+  if (inbam.openFile(bam_file, threads) != 0) {
+    stop("Failed to open BAM file");
+  }
+  chr_names.clear();
+  chr_lens.clear();
+  const int n_contigs = inbam.obtainChrs(chr_names, chr_lens);
+  if (n_contigs <= 0) {
+    stop("Failed to read BAM header");
+  }
+
+  // Shared per-contig difference arrays sized to header lengths (+1 scratch slot
+  // so a block ending exactly at L needs no branch).
+  std::vector<std::vector<int> > delta(static_cast<size_t>(n_contigs));
+  for (int c = 0; c < n_contigs; ++c) {
+    delta[static_cast<size_t>(c)].assign(
+      static_cast<size_t>(chr_lens[static_cast<size_t>(c)]) + 1, 0);
+  }
+
+  while (true) {
+    const int state = inbam.fillReads();
+    if (state == 1) break;
+    if (state == -1 || inbam.GetErrorState() == -1) {
+      stop("BAM decompression failed while computing coverage");
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(threads) schedule(static, 1)
+#endif
+    for (unsigned int tid = 0; tid < threads; ++tid) {
+      while (true) {
+        pbam1_t read(inbam.supplyRead(tid));
+        if (!read.validate()) break;
+
+        const int32_t ref_id = read.refID();
+        if (ref_id < 0 || ref_id >= n_contigs) continue;   // unmapped / bad ref
+        const uint32_t flag = read.flag();
+        if ((flag & 0x4U) != 0U) continue;                 // unmapped (matches readGAlignments)
+        if ((flag & flag_set) != flag_set) continue;
+        if ((flag & flag_unset) != 0U) continue;
+        const int this_mapq = static_cast<int>(read.mapq());
+        if (this_mapq < min_mapq_clamped) continue;
+
+        int* dc = delta[static_cast<size_t>(ref_id)].data();
+        const long L = static_cast<long>(chr_lens[static_cast<size_t>(ref_id)]);
+        long ref0 = static_cast<long>(read.pos());         // 0-based POS
+        const uint32_t nop = read.cigar_size();
+        const uint32_t* cig = read.cigar();
+        if (cig == NULL) continue;
+        for (uint32_t i = 0; i < nop; ++i) {
+          const uint32_t val = cig[i];
+          const uint32_t op = val & 0xFU;
+          const long oplen = static_cast<long>(val >> 4);
+          if (op == 0U || op == 7U || op == 8U || op == 2U) {  // M,=,X,D : cover + consume ref
+            long s = ref0;
+            long e = ref0 + oplen;
+            if (s < 0) s = 0;
+            if (s > L) s = L;
+            if (e < 0) e = 0;
+            if (e > L) e = L;
+            if (s < e) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+              dc[s] += 1;
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+              dc[e] -= 1;
+            }
+            ref0 += oplen;
+          } else if (op == 3U) {                               // N : gap, consume ref only
+            ref0 += oplen;
+          }
+          // I(1), S(4), H(5), P(6): no ref consumption, no coverage
+        }
+      }
+    }
+  }
+
+  inbam.closeFile();
+
+  // Prefix-sum each contig into run-length-encoded coverage. Contigs are
+  // independent -> parallelise across them. Zero-read contigs yield a single run
+  // {value 0, length L}. Runs are fully coalesced (no adjacent equal values) to
+  // match coverage()'s Rle exactly.
+  out_rv.assign(static_cast<size_t>(n_contigs), std::vector<int>());
+  out_rl.assign(static_cast<size_t>(n_contigs), std::vector<int>());
+
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(threads) schedule(dynamic, 1)
+#endif
+  for (int c = 0; c < n_contigs; ++c) {
+    const long L = static_cast<long>(chr_lens[static_cast<size_t>(c)]);
+    const int* dc = delta[static_cast<size_t>(c)].data();
+    std::vector<int>& rv = out_rv[static_cast<size_t>(c)];
+    std::vector<int>& rl = out_rl[static_cast<size_t>(c)];
+    long long acc = 0;
+    int cur_val = 0;
+    long cur_len = 0;
+    for (long i = 0; i < L; ++i) {
+      acc += static_cast<long long>(dc[i]);
+      const int v = static_cast<int>(acc);
+      if (cur_len == 0) {
+        cur_val = v; cur_len = 1;
+      } else if (v == cur_val) {
+        ++cur_len;
+      } else {
+        rv.push_back(cur_val);
+        rl.push_back(static_cast<int>(cur_len));
+        cur_val = v; cur_len = 1;
+      }
+    }
+    if (cur_len > 0) {
+      rv.push_back(cur_val);
+      rl.push_back(static_cast<int>(cur_len));
+    }
+    // L == 0 -> rv/rl empty (a zero-length Rle).
+  }
+
+  // Free the large delta arrays before returning.
+  std::vector<std::vector<int> >().swap(delta);
+  return n_contigs;
+}
+
+// Per-base coverage as an R payload. Returns list(seqnames, seqlengths, runValue,
+// runLength); the R wrapper turns it into a byte-identical SimpleRleList.
+// [[Rcpp::export]]
+List bam_coverage_cpp(
+    const std::string& bam_file,
+    const int n_threads,
+    const int min_mapq,
+    const int flag_require_set,
+    const int flag_require_unset
+) {
+  const unsigned int threads = clamp_threads(n_threads);
+  const int min_mapq_clamped = std::max(0, min_mapq);
+  const uint32_t flag_set = static_cast<uint32_t>(std::max(0, flag_require_set));
+  const uint32_t flag_unset = static_cast<uint32_t>(std::max(0, flag_require_unset));
+
+  std::vector<std::string> chr_names;
+  std::vector<uint32_t> chr_lens;
+  std::vector<std::vector<int> > out_rv;
+  std::vector<std::vector<int> > out_rl;
+  const int n_contigs = bamscale_coverage_runs(
+    bam_file, threads, min_mapq_clamped, flag_set, flag_unset,
+    chr_names, chr_lens, out_rv, out_rl);
+
+  List runValue(n_contigs);
+  List runLength(n_contigs);
+  for (int c = 0; c < n_contigs; ++c) {
+    runValue[c] = IntegerVector(
+      out_rv[static_cast<size_t>(c)].begin(), out_rv[static_cast<size_t>(c)].end());
+    runLength[c] = IntegerVector(
+      out_rl[static_cast<size_t>(c)].begin(), out_rl[static_cast<size_t>(c)].end());
+  }
+
+  return List::create(
+    _["seqnames"] = wrap(chr_names),
+    _["seqlengths"] = wrap(chr_lens),
+    _["runValue"] = runValue,
+    _["runLength"] = runLength
+  );
+}
+
+// Compute per-base coverage and write it directly to a bigWig via libBigWig --
+// BAM -> bigWig entirely in C++, without ever materialising coverage in R. Only
+// non-zero runs are emitted (uncovered bases are implicitly zero, the bigWig
+// convention; import reconstructs full-length zero coverage from the header
+// lengths). Coverage values are integers <= 2^24 here, so float storage is exact.
+// Returns the output path.
+// [[Rcpp::export]]
+std::string bam_coverage_bigwig_cpp(
+    const std::string& bam_file,
+    const std::string& out_file,
+    const int n_threads,
+    const int min_mapq,
+    const int flag_require_set,
+    const int flag_require_unset,
+    const int n_zooms,
+    const int compress_level,
+    const int parallel,
+    const int verbose
+) {
+  const unsigned int threads = clamp_threads(n_threads);
+  const int min_mapq_clamped = std::max(0, min_mapq);
+  const uint32_t flag_set = static_cast<uint32_t>(std::max(0, flag_require_set));
+  const uint32_t flag_unset = static_cast<uint32_t>(std::max(0, flag_require_unset));
+  const int32_t zooms = static_cast<int32_t>(std::max(0, n_zooms));
+
+  // Set libBigWig's zlib deflate level for this write. -1 keeps zlib's default
+  // (level 6); 1..9 trade size for speed. Clamp to the valid range.
+  if (compress_level == -1 || (compress_level >= 1 && compress_level <= 9)) {
+    bwCompressLevel = compress_level;
+  } else {
+    bwCompressLevel = -1;
+  }
+
+  typedef std::chrono::steady_clock clk;
+  const clk::time_point t_start = clk::now();
+
+  std::vector<std::string> chr_names;
+  std::vector<uint32_t> chr_lens;
+  std::vector<std::vector<int> > out_rv;
+  std::vector<std::vector<int> > out_rl;
+  const int n_contigs = bamscale_coverage_runs(
+    bam_file, threads, min_mapq_clamped, flag_set, flag_unset,
+    chr_names, chr_lens, out_rv, out_rl);
+  const clk::time_point t_computed = clk::now();
+
+  if (bwInit(1 << 17) != 0) {
+    stop("libBigWig: bwInit failed");
+  }
+  bigWigFile_t* fp = bwOpen(const_cast<char*>(out_file.c_str()), NULL, "w");
+  if (fp == NULL) {
+    bwCleanup();
+    stop("libBigWig: could not open '%s' for writing", out_file);
+  }
+
+  std::vector<const char*> chroms(static_cast<size_t>(n_contigs));
+  for (int c = 0; c < n_contigs; ++c) {
+    chroms[static_cast<size_t>(c)] = chr_names[static_cast<size_t>(c)].c_str();
+  }
+
+  if (bwCreateHdr(fp, zooms)) {
+    bwClose(fp); bwCleanup();
+    stop("libBigWig: bwCreateHdr failed");
+  }
+  fp->cl = bwCreateChromList(chroms.data(), chr_lens.data(), static_cast<int64_t>(n_contigs));
+  if (fp->cl == NULL) {
+    bwClose(fp); bwCleanup();
+    stop("libBigWig: bwCreateChromList failed");
+  }
+  if (bwWriteHdr(fp)) {
+    bwClose(fp); bwCleanup();
+    stop("libBigWig: bwWriteHdr failed");
+  }
+  const clk::time_point t_hdr = clk::now();
+
+  // Enable deferred parallel block compression for this write (data blocks are
+  // captured during add and compressed across threads in bwFinalize; zoom blocks
+  // are compressed in parallel too). Output is byte-identical to the serial path.
+  bwsBeginParallel(parallel != 0 ? 1 : 0);
+  bwsVerbose = (verbose != 0) ? 1 : 0;
+
+  // Per contig: emit non-zero runs as (start,end,value) intervals, chunked to bound
+  // the transient arrays. The first chunk of a contig starts a new block via
+  // bwAddIntervals; subsequent chunks of the same contig use bwAppendIntervals.
+  const size_t CHUNK = static_cast<size_t>(1) << 20;
+  std::vector<uint32_t> starts; starts.reserve(CHUNK);
+  std::vector<uint32_t> ends;   ends.reserve(CHUNK);
+  std::vector<float> vals;      vals.reserve(CHUNK);
+  std::vector<const char*> cptr; cptr.reserve(CHUNK);
+
+  for (int c = 0; c < n_contigs; ++c) {
+    const std::vector<int>& rv = out_rv[static_cast<size_t>(c)];
+    const std::vector<int>& rl = out_rl[static_cast<size_t>(c)];
+    const char* cname = chr_names[static_cast<size_t>(c)].c_str();
+    long pos = 0;
+    bool first_block = true;
+    starts.clear(); ends.clear(); vals.clear(); cptr.clear();
+    for (size_t k = 0; k < rv.size(); ++k) {
+      const int v = rv[k];
+      const long len = static_cast<long>(rl[k]);
+      if (v > 0) {
+        starts.push_back(static_cast<uint32_t>(pos));
+        ends.push_back(static_cast<uint32_t>(pos + len));
+        vals.push_back(static_cast<float>(v));
+        cptr.push_back(cname);
+        if (starts.size() >= CHUNK) {
+          const int rc = first_block
+            ? bwAddIntervals(fp, cptr.data(), starts.data(), ends.data(), vals.data(),
+                             static_cast<uint32_t>(starts.size()))
+            : bwAppendIntervals(fp, starts.data(), ends.data(), vals.data(),
+                                static_cast<uint32_t>(starts.size()));
+          if (rc) { bwClose(fp); bwCleanup(); stop("libBigWig: writing intervals failed"); }
+          first_block = false;
+          starts.clear(); ends.clear(); vals.clear(); cptr.clear();
+        }
+      }
+      pos += len;
+    }
+    if (!starts.empty()) {
+      const int rc = first_block
+        ? bwAddIntervals(fp, cptr.data(), starts.data(), ends.data(), vals.data(),
+                         static_cast<uint32_t>(starts.size()))
+        : bwAppendIntervals(fp, starts.data(), ends.data(), vals.data(),
+                            static_cast<uint32_t>(starts.size()));
+      if (rc) { bwClose(fp); bwCleanup(); stop("libBigWig: writing intervals failed"); }
+    }
+  }
+
+  const clk::time_point t_intervals = clk::now();
+
+  // Register the in-memory coverage runs so bwFinalize builds zoom levels from
+  // them instead of re-reading + decompressing the data section (byte-identical).
+  // Only in parallel mode, so parallel=FALSE stays exactly the stock libBigWig
+  // write path (a clean serial reference for byte-identity checks).
+  std::vector<const int*> run_v(static_cast<size_t>(n_contigs));
+  std::vector<const int*> run_l(static_cast<size_t>(n_contigs));
+  std::vector<long> run_n(static_cast<size_t>(n_contigs));
+  if (parallel != 0) {
+    for (int c = 0; c < n_contigs; ++c) {
+      run_v[static_cast<size_t>(c)] = out_rv[static_cast<size_t>(c)].data();
+      run_l[static_cast<size_t>(c)] = out_rl[static_cast<size_t>(c)].data();
+      run_n[static_cast<size_t>(c)] = static_cast<long>(out_rv[static_cast<size_t>(c)].size());
+    }
+    bwsSetRuns(run_v.data(), run_l.data(), run_n.data());
+  }
+
+  bwClose(fp);   // bwFinalize: parallel-flush data blocks, build index, zoom levels
+  bwCleanup();
+  bwsSetRuns(NULL, NULL, NULL);
+  bwsBeginParallel(0);   // reset deferral state
+  const clk::time_point t_done = clk::now();
+
+  if (verbose != 0) {
+    const double d_compute   = std::chrono::duration<double>(t_computed  - t_start).count();
+    const double d_intervals = std::chrono::duration<double>(t_intervals - t_hdr).count();
+    const double d_finalize  = std::chrono::duration<double>(t_done      - t_intervals).count();
+    const double d_total     = std::chrono::duration<double>(t_done      - t_start).count();
+    REprintf("[bam_coverage_bigwig] compute=%.1fs  write_intervals=%.1fs  finalize/zoom=%.1fs  total=%.1fs\n",
+             d_compute, d_intervals, d_finalize, d_total);
+  }
+
+  return out_file;
 }

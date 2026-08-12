@@ -222,7 +222,30 @@ bam_read <- function(
 
     field_mask <- .bamscale_make_field_mask(needed_fields)
 
+    # Fast path: assemble the GAlignments slots in C++ (no data.frame
+    # intermediate, no R-side Rle/subset work, CHARSXP-cached cigar). Taken for
+    # plain GAlignments requests; `which`, which_label, tags and seq/qual fall
+    # back to the generic path. Escape hatch: options(BamScale.ga_fastpath = FALSE).
+    ga_fastpath <- identical(as, "GAlignments") &&
+        nrow(parsed$which) == 0L &&
+        !isTRUE(internal_with_which_label) &&
+        length(tag_final) == 0L &&
+        !include_seq && !include_qual &&
+        !identical(getOption("BamScale.ga_fastpath", TRUE), FALSE)
+
     worker <- function(path_one) {
+        if (ga_fastpath) {
+            payload <- .Call(
+                `_BamScale_galignments_cpp`,
+                path_one,
+                threads,
+                as.integer(parsed$min_mapq),
+                as.integer(parsed$flag_set),
+                as.integer(parsed$flag_unset),
+                as.integer(field_mask)
+            )
+            return(.bamscale_ga_from_payload(payload, what_final, use.names))
+        }
         raw_df <- .Call(
             `_BamScale_read_bam_cpp`,
             path_one,
@@ -358,6 +381,334 @@ bam_count <- function(
         BPPARAM = BPPARAM,
         bp_workers = parallel_plan$bp_workers
     )
+}
+
+#' Fragment-size distribution, aggregated in C++
+#'
+#' Computes the paired-end fragment-size (insert-size) distribution -- a table of
+#' `abs(TLEN)` counts -- by accumulating the histogram inside the multithreaded
+#' C++ reader, without ever materialising the per-read insert sizes as an R
+#' vector. This is the fast path for ATAC-seq / paired-end fragment-size QC on
+#' large BAMs: the histogram is folded together inside the OpenMP threads and only
+#' the compact `(fragment_size, count)` table crosses back into R (cf.
+#' `scanBam(what = "isize")` followed by `table(abs(isize))`, which materialises
+#' every insert size in R first).
+#'
+#' @param file A BAM file path, [Rsamtools::BamFile], or a vector / `BamFileList`
+#'   of them.
+#' @param param Optional [Rsamtools::ScanBamParam] (or a compatible list). Only
+#'   its `flag` and `mapqFilter` are honoured, applied per read in C++ -- e.g.
+#'   `Rsamtools::ScanBamParam(flag = Rsamtools::scanBamFlag(
+#'   isSecondaryAlignment = FALSE, isUnmappedQuery = FALSE,
+#'   isNotPassingQualityControls = FALSE))` to reproduce the standard ATAC
+#'   fragment-size filter.
+#' @param threads Number of OpenMP threads for within-file decoding.
+#' @param BPPARAM A [BiocParallel::BiocParallelParam] for across-file parallelism
+#'   when `file` has more than one element.
+#' @param auto_threads Logical; if `TRUE`, balance the thread / worker split.
+#' @param max_fragment Integer; fragment sizes up to this value are tallied in a
+#'   dense histogram and larger ones in an overflow map. Every observed size is
+#'   returned exactly regardless of this value (default `1e5`).
+#' @param drop_mate_unmapped Logical; if `TRUE` (default), reads whose mate is
+#'   unmapped (SAM flag `0x8`) are excluded -- matching `Rsamtools::scanBam`,
+#'   which reports their `isize` as `NA` (no defined template length), so that
+#'   `table(abs(isize))` drops them. Set `FALSE` to tally `abs(TLEN)` over all
+#'   flag-passing reads.
+#'
+#' @return A `data.frame` with columns `fragment_size` (integer `abs(TLEN)`) and
+#'   `count` (numeric), one row per observed fragment size in ascending order.
+#'   For multiple input files, a named list of such data.frames.
+#'
+#' @seealso [bam_read()] for reading records, [bam_count()] for per-chromosome
+#'   counts.
+#' @export
+fragment_sizes <- function(
+    file,
+    param = NULL,
+    threads = 1L,
+    BPPARAM = BiocParallel::bpparam(),
+    auto_threads = FALSE,
+    max_fragment = 100000L,
+    drop_mate_unmapped = TRUE
+) {
+    files <- .bamscale_normalize_files(file)
+    parallel_plan <- .bamscale_resolve_parallel_plan(
+        threads = threads,
+        BPPARAM = BPPARAM,
+        auto_threads = auto_threads,
+        n_files = length(files)
+    )
+    threads <- parallel_plan$threads
+    parsed <- .bamscale_parse_param(param)
+
+    worker <- function(path_one) {
+        .Call(
+            `_BamScale_fragment_sizes_cpp`,
+            path_one,
+            threads,
+            as.integer(parsed$min_mapq),
+            as.integer(parsed$flag_set),
+            as.integer(parsed$flag_unset),
+            as.integer(max_fragment),
+            as.integer(drop_mate_unmapped)
+        )
+    }
+
+    .bamscale_apply_files(
+        files,
+        worker,
+        BPPARAM = BPPARAM,
+        bp_workers = parallel_plan$bp_workers
+    )
+}
+
+#' Mapping-quality (MAPQ) distribution, aggregated in C++
+#'
+#' Computes the MAPQ distribution -- a table of per-value alignment-count -- by
+#' accumulating the histogram inside the multithreaded C++ reader, without ever
+#' materialising the per-read MAPQ values as an R vector. This is the fast path
+#' for mapping-quality QC on large BAMs: each thread tallies MAPQ into a private
+#' 256-slot histogram inside the OpenMP region and only the compact
+#' `(mapq, count)` table crosses back into R (cf. `scanBam(what = "mapq")`
+#' followed by `table(mapq)`, which materialises every MAPQ in R first).
+#'
+#' @param file A BAM file path, [Rsamtools::BamFile], or a vector / `BamFileList`
+#'   of them.
+#' @param param Optional [Rsamtools::ScanBamParam] (or a compatible list). Only
+#'   its `flag` and `mapqFilter` are honoured, applied per read in C++. Note that
+#'   a non-zero `mapqFilter` removes reads below that MAPQ from the distribution.
+#' @param threads Number of OpenMP threads for within-file decoding.
+#' @param BPPARAM A [BiocParallel::BiocParallelParam] for across-file parallelism
+#'   when `file` has more than one element.
+#' @param auto_threads Logical; if `TRUE`, balance the thread / worker split.
+#'
+#' @return A `data.frame` with columns `mapq` (integer, 0-255) and `count`
+#'   (numeric), one row per observed MAPQ value in ascending order. For multiple
+#'   input files, a named list of such data.frames.
+#'
+#' @seealso [fragment_sizes()] for the fragment-size distribution, [bam_count()]
+#'   for per-chromosome counts.
+#' @export
+mapq_dist <- function(
+    file,
+    param = NULL,
+    threads = 1L,
+    BPPARAM = BiocParallel::bpparam(),
+    auto_threads = FALSE
+) {
+    files <- .bamscale_normalize_files(file)
+    parallel_plan <- .bamscale_resolve_parallel_plan(
+        threads = threads,
+        BPPARAM = BPPARAM,
+        auto_threads = auto_threads,
+        n_files = length(files)
+    )
+    threads <- parallel_plan$threads
+    parsed <- .bamscale_parse_param(param)
+
+    worker <- function(path_one) {
+        .Call(
+            `_BamScale_mapq_dist_cpp`,
+            path_one,
+            threads,
+            as.integer(parsed$min_mapq),
+            as.integer(parsed$flag_set),
+            as.integer(parsed$flag_unset)
+        )
+    }
+
+    .bamscale_apply_files(
+        files,
+        worker,
+        BPPARAM = BPPARAM,
+        bp_workers = parallel_plan$bp_workers
+    )
+}
+
+# Build a SimpleRleList byte-identical to GenomicAlignments::coverage(GAlignments)
+# from the compact (seqnames, runValue, runLength) payload returned by the C++
+# coverage aggregator. The exact recipe (uncompressed RleList, integer runs,
+# header-order names, no mcols/metadata) was verified identical() to coverage().
+.bamscale_coverage_to_rlelist <- function(raw) {
+    elts <- mapply(
+        function(v, l) {
+            S4Vectors::Rle(values = as.integer(v), lengths = as.integer(l))
+        },
+        raw$runValue,
+        raw$runLength,
+        SIMPLIFY = FALSE
+    )
+    out <- IRanges::RleList(elts, compress = FALSE)
+    names(out) <- as.character(raw$seqnames)
+    out
+}
+
+#' Per-base coverage, aggregated in C++
+#'
+#' Computes per-base read coverage by folding a per-contig difference array inside
+#' the multithreaded C++ reader and run-length encoding the result, without ever
+#' materialising the alignments as an R `GAlignments` object. This is the fast path
+#' for coverage / bigWig generation on large BAMs: the standard route
+#' (`GenomicAlignments::coverage(readGAlignments(file))`) builds a full
+#' `GAlignments` in R first, which is the dominant cost on 100M+-read files.
+#'
+#' The result is **byte-identical** (`identical()`) to
+#' `GenomicAlignments::coverage(GenomicAlignments::readGAlignments(file))`: CIGAR
+#' operations `M`, `=`, `X` and `D` contribute to coverage, `N` introduces a gap,
+#' and `I`/`S`/`H`/`P` are ignored; only unmapped reads (SAM flag `0x4`) are
+#' dropped by default -- secondary, supplementary, duplicate and QC-fail reads are
+#' counted, exactly as `readGAlignments()` does.
+#'
+#' @param file A BAM file path, [Rsamtools::BamFile], or a vector / `BamFileList`
+#'   of them.
+#' @param param Optional [Rsamtools::ScanBamParam] (or a compatible list). Only its
+#'   `flag` and `mapqFilter` are honoured, applied per read in C++. With the default
+#'   `NULL` the filter matches `readGAlignments()` (drop only unmapped reads). Note
+#'   that `which` (region) restriction is not applied.
+#' @param threads Number of OpenMP threads for within-file decoding.
+#' @param BPPARAM A [BiocParallel::BiocParallelParam] for across-file parallelism
+#'   when `file` has more than one element.
+#' @param auto_threads Logical; if `TRUE`, balance the thread / worker split.
+#'
+#' @return An [IRanges::RleList] (`SimpleRleList`) of integer coverage, one element
+#'   per BAM-header sequence in header order, each of length equal to the header
+#'   sequence length (contigs with no reads are all-zero runs). For multiple input
+#'   files, a named list of such `RleList`s.
+#'
+#' @seealso [fragment_sizes()], [mapq_dist()], [bam_read()].
+#' @export
+bam_coverage <- function(
+    file,
+    param = NULL,
+    threads = 1L,
+    BPPARAM = BiocParallel::bpparam(),
+    auto_threads = FALSE
+) {
+    files <- .bamscale_normalize_files(file)
+    parallel_plan <- .bamscale_resolve_parallel_plan(
+        threads = threads,
+        BPPARAM = BPPARAM,
+        auto_threads = auto_threads,
+        n_files = length(files)
+    )
+    threads <- parallel_plan$threads
+    parsed <- .bamscale_parse_param(param)
+
+    worker <- function(path_one) {
+        raw <- .Call(
+            `_BamScale_bam_coverage_cpp`,
+            path_one,
+            threads,
+            as.integer(parsed$min_mapq),
+            as.integer(parsed$flag_set),
+            as.integer(parsed$flag_unset)
+        )
+        .bamscale_coverage_to_rlelist(raw)
+    }
+
+    .bamscale_apply_files(
+        files,
+        worker,
+        BPPARAM = BPPARAM,
+        bp_workers = parallel_plan$bp_workers
+    )
+}
+
+#' Write per-base coverage to a bigWig, computed in C++
+#'
+#' Computes per-base coverage (identical to [bam_coverage()]) and writes it
+#' directly to a bigWig file entirely in C++ via the bundled libBigWig, without
+#' ever materialising the coverage as an R object. This is the fast path for
+#' generating coverage tracks from large BAMs: the usual route
+#' (`rtracklayer::export.bw(bam_coverage(file), out)`) round-trips a large
+#' `RleList` through R, and the serialisation dominates. Only non-zero coverage
+#' runs are written (uncovered bases are implicitly zero, the bigWig convention);
+#' importing the file reconstructs full-length coverage from the header lengths.
+#'
+#' The written values are identical to
+#' `GenomicAlignments::coverage(GenomicAlignments::readGAlignments(file))`
+#' (`M`/`=`/`X`/`D` contribute, `N` is a gap, `I`/`S`/`H`/`P` are ignored; only
+#' unmapped reads are dropped by default). Coverage values are integers stored as
+#' the bigWig `float` type, which is exact for depths up to `2^24`.
+#'
+#' @param file A BAM file path, [Rsamtools::BamFile], or a vector / `BamFileList`
+#'   of them.
+#' @param outfile Output bigWig path(s); must have the same length as `file`.
+#' @param param Optional [Rsamtools::ScanBamParam] (or a compatible list). Only its
+#'   `flag` and `mapqFilter` are honoured, applied per read in C++. With the default
+#'   `NULL` the filter matches `readGAlignments()` (drop only unmapped reads).
+#' @param threads Number of OpenMP threads for within-file decoding.
+#' @param BPPARAM A [BiocParallel::BiocParallelParam] for across-file parallelism
+#'   when `file` has more than one element.
+#' @param auto_threads Logical; if `TRUE`, balance the thread / worker split.
+#' @param n_zooms Maximum number of bigWig zoom levels to generate (default `10`).
+#' @param compress_level Integer zlib deflate level for the bigWig blocks: `-1`
+#'   (default) uses zlib's default (level 6, matching other bigWig writers); `1`
+#'   to `9` trade file size for speed (`1` is the fastest write and gives the
+#'   largest file). Coverage values are unaffected -- only file size and write
+#'   time change.
+#' @param parallel Logical; if `TRUE` (default), compress the bigWig data and zoom
+#'   blocks across the OpenMP `threads` (deferred parallel compression). The output
+#'   is byte-identical to serial compression. Set `FALSE` for the classic
+#'   single-threaded write.
+#' @param verbose Logical; if `TRUE`, print a per-phase timing breakdown
+#'   (coverage compute / interval write / zoom + index finalize) to stderr.
+#'
+#' @return The output path(s), invisibly.
+#'
+#' @seealso [bam_coverage()] for the in-memory `RleList`.
+#' @export
+bam_coverage_bigwig <- function(
+    file,
+    outfile,
+    param = NULL,
+    threads = 1L,
+    BPPARAM = BiocParallel::bpparam(),
+    auto_threads = FALSE,
+    n_zooms = 10L,
+    compress_level = -1L,
+    parallel = TRUE,
+    verbose = FALSE
+) {
+    files <- .bamscale_normalize_files(file)
+    outfile <- as.character(outfile)
+    if (length(outfile) != length(files)) {
+        stop("`outfile` must have the same length as `file`", call. = FALSE)
+    }
+    parallel_plan <- .bamscale_resolve_parallel_plan(
+        threads = threads,
+        BPPARAM = BPPARAM,
+        auto_threads = auto_threads,
+        n_files = length(files)
+    )
+    threads <- parallel_plan$threads
+    parsed <- .bamscale_parse_param(param)
+
+    worker <- function(i) {
+        .Call(
+            `_BamScale_bam_coverage_bigwig_cpp`,
+            files[[i]],
+            outfile[[i]],
+            threads,
+            as.integer(parsed$min_mapq),
+            as.integer(parsed$flag_set),
+            as.integer(parsed$flag_unset),
+            as.integer(n_zooms),
+            as.integer(compress_level),
+            as.integer(parallel),
+            as.integer(verbose)
+        )
+    }
+
+    idx <- seq_along(files)
+    names(idx) <- names(files)
+    paths <- .bamscale_apply_files(
+        idx,
+        worker,
+        BPPARAM = BPPARAM,
+        bp_workers = parallel_plan$bp_workers
+    )
+    invisible(paths)
 }
 
 #' Decode compact BamScale sequence output
@@ -1012,6 +1363,78 @@ decode_seqqual_compact <- function(x, seq_col = "seq", qual_col = "qual", qwidth
         return(rep(NA_integer_, n))
     }
     rep(NA, n)
+}
+
+# Build a GAlignments from the compact slot payload returned by galignments_cpp.
+# The C++ side already applied all filters (kept rows only, file order), computed
+# maximal seqnames/strand runs (1-based codes into header order / c("+","-","*"))
+# and materialised the cigar with a CHARSXP cache -- so this function only wraps
+# slots: no which()/[idx] subsetting, no Rle() scan over n elements.
+# `new2(check = FALSE)` skips the O(n) CIGAR re-validation (the reader emits only
+# structurally valid CIGARs); if that internal is unavailable the plain validated
+# constructor produces an identical object.
+.bamscale_ga_from_payload <- function(payload, what_final, use.names = FALSE) {
+    lv <- as.character(payload$seqnames_header)
+    sq <- S4Vectors::Rle(
+        values = structure(
+            as.integer(payload$seqnames_runval),
+            levels = lv,
+            class = "factor"
+        ),
+        lengths = as.integer(payload$seqnames_runlen)
+    )
+    st <- S4Vectors::Rle(
+        values = structure(
+            as.integer(payload$strand_runval),
+            levels = c("+", "-", "*"),
+            class = "factor"
+        ),
+        lengths = as.integer(payload$strand_runlen)
+    )
+    si <- GenomeInfoDb::Seqinfo(
+        seqnames = lv,
+        seqlengths = as.integer(payload$seqlengths_header)
+    )
+
+    n <- as.integer(payload$n)
+    mcn <- setdiff(what_final, c("rname", "pos", "cigar", "strand"))
+    mc <- if (length(mcn) == 0L) {
+        S4Vectors::make_zero_col_DFrame(n)
+    } else {
+        methods::new("DFrame", listData = payload$mcols[mcn], nrows = n)
+    }
+
+    nm <- if (isTRUE(use.names) && "qname" %in% what_final) {
+        as.character(payload$mcols$qname)
+    } else {
+        NULL
+    }
+
+    tryCatch(
+        S4Vectors:::new2(
+            "GAlignments",
+            seqnames = sq,
+            start = as.integer(payload$start),
+            cigar = as.character(payload$cigar),
+            strand = st,
+            NAMES = nm,
+            elementMetadata = mc,
+            seqinfo = si,
+            check = FALSE
+        ),
+        error = function(e) {
+            methods::new(
+                "GAlignments",
+                seqnames = sq,
+                start = as.integer(payload$start),
+                cigar = as.character(payload$cigar),
+                strand = st,
+                NAMES = nm,
+                elementMetadata = mc,
+                seqinfo = si
+            )
+        }
+    )
 }
 
 .bamscale_as_galignments <- function(selected_df, raw_df, use.names = FALSE, selected_names = names(selected_df), row_index = NULL) {

@@ -53,7 +53,21 @@ do_index   <- !(tolower(as.character(args$index)) %in% c("false", "0", "no"))
 
 encode_file_url <- function(acc) sprintf("https://www.encodeproject.org/files/%s/@@download/%s.bam", acc, acc)
 
+# --manifest=manifest.csv mode: rows with columns accession,url,md5sum (as
+# written by select_encode_atac.R). Optional --role=single|multi filters rows.
+# md5 is verified after download; a mismatch deletes the file and reports it.
+manifest_df <- NULL
+if (!is.null(args$manifest)) {
+    manifest_df <- utils::read.csv(args$manifest, stringsAsFactors = FALSE)
+    if (!is.null(args$role)) manifest_df <- manifest_df[manifest_df$role == args$role, ]
+    if (!is.null(args$rows)) {
+        idx <- suppressWarnings(as.integer(split_csv(args$rows)))
+        manifest_df <- manifest_df[idx[!is.na(idx) & idx <= nrow(manifest_df)], ]
+    }
+}
+
 resolve_urls <- function() {
+    if (!is.null(manifest_df)) return(manifest_df$url)
     if (!is.null(args$urls)) return(split_csv(args$urls))
     if (!is.null(args$files)) return(vapply(split_csv(args$files), encode_file_url, character(1)))
     if (!is.null(args$experiment)) {
@@ -105,14 +119,29 @@ for (u in urls) {
     } else {
         cat("  exists: ", basename(dst), "\n", sep = "")
     }
+    # md5 verification against the manifest (delete on mismatch so a re-run retries)
+    md5_ok <- NA
+    if (!is.null(manifest_df)) {
+        want <- manifest_df$md5sum[match(acc, manifest_df$accession)]
+        if (length(want) == 1L && !is.na(want)) {
+            got <- unname(tools::md5sum(dst))
+            md5_ok <- identical(got, want)
+            if (!isTRUE(md5_ok)) {
+                cat("    MD5 MISMATCH (", got, " != ", want, ") -- deleting for retry\n", sep = "")
+                unlink(dst)
+                next
+            }
+        }
+    }
     if (do_index) tryCatch(Rsamtools::indexBam(dst), error = function(e) cat("    index failed: ", conditionMessage(e), "\n", sep = ""))
-    results[[dst]] <- list(size_mb = round(file.size(dst) / 1024^2, 1), paired = is_paired(dst))
+    results[[dst]] <- list(size_mb = round(file.size(dst) / 1024^2, 1), paired = is_paired(dst), md5_ok = md5_ok)
 }
 
 cat("\nSummary:\n")
 for (p in names(results)) {
     r <- results[[p]]
-    cat(sprintf("  %-40s  %8.1f MB   paired=%s\n", basename(p), r$size_mb, r$paired))
+    cat(sprintf("  %-40s  %8.1f MB   paired=%s   md5_ok=%s\n",
+                basename(p), r$size_mb, r$paired, r$md5_ok))
 }
 paired_all <- all(vapply(results, function(r) isTRUE(r$paired), logical(1)))
 if (!paired_all) {

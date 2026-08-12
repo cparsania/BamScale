@@ -244,6 +244,262 @@ test_that("bam_count runs and returns expected columns", {
   expect_true(nrow(y) > 0)
 })
 
+test_that("fragment_sizes is byte-identical to table(abs(scanBam isize))", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  FLAG <- Rsamtools::scanBamFlag(
+    isSecondaryAlignment = FALSE,
+    isUnmappedQuery = FALSE,
+    isNotPassingQualityControls = FALSE
+  )
+  fs <- fragment_sizes(
+    bam,
+    param = Rsamtools::ScanBamParam(flag = FLAG),
+    threads = 1
+  )
+  expect_s3_class(fs, "data.frame")
+  expect_identical(names(fs), c("fragment_size", "count"))
+  expect_false(is.unsorted(fs$fragment_size))
+
+  # Reference: scanBam materialises every insert size, then table(abs()).
+  # scanBam reports isize = NA for mate-unmapped reads, which table() drops;
+  # fragment_sizes(drop_mate_unmapped = TRUE) replicates that exactly.
+  iz <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = "isize", flag = FLAG)
+  )[[1]]$isize
+  ref <- table(abs(iz))
+  ref_df <- data.frame(
+    fragment_size = as.integer(names(ref)),
+    ref = as.numeric(ref)
+  )
+  m <- merge(fs, ref_df, by = "fragment_size", all = TRUE)
+  m[is.na(m)] <- 0
+  expect_equal(m$count, m$ref)
+  expect_equal(sum(fs$count), sum(!is.na(iz)))
+})
+
+test_that("fragment_sizes(drop_mate_unmapped = FALSE) keeps mate-unmapped reads", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  keep <- fragment_sizes(bam, threads = 1, drop_mate_unmapped = FALSE)
+  drop <- fragment_sizes(bam, threads = 1, drop_mate_unmapped = TRUE)
+  expect_gte(sum(keep$count), sum(drop$count))
+})
+
+test_that("mapq_dist is byte-identical to table(scanBam mapq)", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  FLAG <- Rsamtools::scanBamFlag(
+    isSecondaryAlignment = FALSE,
+    isUnmappedQuery = FALSE,
+    isNotPassingQualityControls = FALSE
+  )
+  md <- mapq_dist(
+    bam,
+    param = Rsamtools::ScanBamParam(flag = FLAG),
+    threads = 1
+  )
+  expect_s3_class(md, "data.frame")
+  expect_identical(names(md), c("mapq", "count"))
+  expect_false(is.unsorted(md$mapq))
+
+  mq <- Rsamtools::scanBam(
+    bam,
+    param = Rsamtools::ScanBamParam(what = "mapq", flag = FLAG)
+  )[[1]]$mapq
+  ref <- table(mq)
+  ref_df <- data.frame(
+    mapq = as.integer(names(ref)),
+    ref = as.numeric(ref)
+  )
+  m <- merge(md, ref_df, by = "mapq", all = TRUE)
+  m[is.na(m)] <- 0
+  expect_equal(m$count, m$ref)
+  expect_equal(sum(md$count), sum(!is.na(mq)))
+})
+
+test_that("fragment_sizes and mapq_dist return named lists for multiple files", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  fs <- fragment_sizes(file = c(a = bam, b = bam), threads = 1)
+  expect_type(fs, "list")
+  expect_equal(names(fs), c("a", "b"))
+  expect_s3_class(fs[[1]], "data.frame")
+
+  md <- mapq_dist(file = c(a = bam, b = bam), threads = 1)
+  expect_type(md, "list")
+  expect_equal(names(md), c("a", "b"))
+  expect_s3_class(md[[1]], "data.frame")
+})
+
+test_that("bam_coverage is byte-identical to coverage(readGAlignments)", {
+  skip_if_not_installed("GenomicAlignments")
+  bam <- ompBAM::example_BAM("Unsorted")
+  got <- bam_coverage(bam, threads = 1)
+  ref <- GenomicAlignments::coverage(GenomicAlignments::readGAlignments(bam))
+
+  # Output must be an *uncompressed* SimpleRleList, integer runs, header-order
+  # names -- each independently required for identical() to coverage().
+  expect_true(methods::is(got, "SimpleRleList"))
+  expect_false(methods::is(got, "CompressedRleList"))
+  expect_identical(names(got), names(ref))
+  expect_identical(typeof(S4Vectors::runValue(got[[1]])), "integer")
+  expect_identical(got, ref)
+})
+
+test_that("bam_coverage keeps secondary/supplementary reads (readGAlignments filter)", {
+  # Only unmapped (0x4) reads are dropped; the default must match readGAlignments,
+  # not a stricter flag filter. Passing that exact flag must not change the result.
+  skip_if_not_installed("GenomicAlignments")
+  bam <- ompBAM::example_BAM("Unsorted")
+  default_cov <- bam_coverage(bam, threads = 1)
+  explicit_cov <- bam_coverage(
+    bam, threads = 1,
+    param = Rsamtools::ScanBamParam(
+      flag = Rsamtools::scanBamFlag(isUnmappedQuery = FALSE)
+    )
+  )
+  expect_identical(default_cov, explicit_cov)
+})
+
+test_that("bam_coverage returns a named list for multiple files", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  cv <- bam_coverage(file = c(a = bam, b = bam), threads = 1)
+  expect_type(cv, "list")
+  expect_equal(names(cv), c("a", "b"))
+  expect_true(methods::is(cv[[1]], "SimpleRleList"))
+})
+
+test_that("bam_coverage_bigwig writes a bigWig with values identical to coverage()", {
+  skip_if_not_installed("rtracklayer")
+  skip_if_not_installed("GenomicAlignments")
+  bam <- ompBAM::example_BAM("Unsorted")
+  out <- tempfile(fileext = ".bw")
+  on.exit(unlink(out), add = TRUE)
+
+  ret <- bam_coverage_bigwig(bam, out, threads = 1)
+  expect_identical(as.character(ret), out)
+  expect_true(file.exists(out) && file.info(out)$size > 0)
+
+  imp <- rtracklayer::import(out, as = "RleList")
+  ref <- GenomicAlignments::coverage(GenomicAlignments::readGAlignments(bam))
+  common <- intersect(names(ref), names(imp))
+  expect_gt(length(common), 0)
+  for (nm in common) {
+    expect_equal(as.numeric(imp[[nm]]), as.numeric(ref[[nm]]))
+  }
+  auc <- function(rl) sum(vapply(rl, function(x)
+    sum(as.numeric(S4Vectors::runValue(x)) * as.numeric(S4Vectors::runLength(x))),
+    numeric(1)))
+  expect_equal(auc(imp[common]), auc(ref))
+})
+
+test_that("bam_coverage_bigwig errors when outfile length != file length", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  expect_error(
+    bam_coverage_bigwig(c(bam, bam), tempfile(fileext = ".bw"), threads = 1),
+    "same length"
+  )
+})
+
+test_that("bam_coverage_bigwig parallel output is byte-identical to serial", {
+  # Parallel block compression must produce a bit-for-bit identical bigWig
+  # (compress2 is deterministic; blocks are written in the same order).
+  bam <- ompBAM::example_BAM("Unsorted")
+  op <- tempfile(fileext = ".bw")
+  os <- tempfile(fileext = ".bw")
+  on.exit(unlink(c(op, os)), add = TRUE)
+  bam_coverage_bigwig(bam, op, threads = 2, parallel = TRUE)
+  bam_coverage_bigwig(bam, os, threads = 2, parallel = FALSE)
+  expect_identical(
+    readBin(op, "raw", file.info(op)$size),
+    readBin(os, "raw", file.info(os)$size)
+  )
+})
+
+test_that("GA fast path is identical to readGAlignments (core fields)", {
+  skip_if_not_installed("GenomicAlignments")
+  bam <- ompBAM::example_BAM("Unsorted")
+  ref <- GenomicAlignments::readGAlignments(Rsamtools::BamFile(bam))
+
+  ga1 <- bam_read(bam, what = c("rname", "pos", "cigar", "strand"),
+                  as = "GAlignments", threads = 1)
+  expect_identical(ga1, ref)
+
+  # threads > 1 exercises the tid-ordered merge and RLE boundary coalescing
+  ga4 <- bam_read(bam, what = c("rname", "pos", "cigar", "strand"),
+                  as = "GAlignments", threads = 4)
+  expect_identical(ga4, ref)
+})
+
+test_that("GA fast path mcols match readGAlignments param what", {
+  skip_if_not_installed("GenomicAlignments")
+  bam <- ompBAM::example_BAM("Unsorted")
+
+  ref <- GenomicAlignments::readGAlignments(
+    Rsamtools::BamFile(bam),
+    param = Rsamtools::ScanBamParam(what = c("flag", "qname"))
+  )
+  ga <- bam_read(bam,
+                 what = c("rname", "pos", "cigar", "strand", "flag", "qname"),
+                 as = "GAlignments", threads = 2)
+  expect_identical(ga, ref)
+
+  # reversed mcols order must be preserved
+  ref2 <- GenomicAlignments::readGAlignments(
+    Rsamtools::BamFile(bam),
+    param = Rsamtools::ScanBamParam(what = c("qname", "flag"))
+  )
+  ga2 <- bam_read(bam,
+                  what = c("rname", "pos", "cigar", "strand", "qname", "flag"),
+                  as = "GAlignments", threads = 2)
+  expect_identical(ga2, ref2)
+})
+
+test_that("GA fast path honors use.names and filters like readGAlignments", {
+  skip_if_not_installed("GenomicAlignments")
+  bam <- ompBAM::example_BAM("Unsorted")
+
+  ref <- GenomicAlignments::readGAlignments(
+    Rsamtools::BamFile(bam),
+    use.names = TRUE,
+    param = Rsamtools::ScanBamParam(what = c("flag", "qname"))
+  )
+  ga <- bam_read(bam,
+                 what = c("rname", "pos", "cigar", "strand", "flag", "qname"),
+                 as = "GAlignments", use.names = TRUE, threads = 2)
+  expect_identical(ga, ref)
+
+  FLAG <- Rsamtools::scanBamFlag(isMinusStrand = FALSE)
+  reff <- GenomicAlignments::readGAlignments(
+    Rsamtools::BamFile(bam),
+    param = Rsamtools::ScanBamParam(flag = FLAG, mapqFilter = 10)
+  )
+  gaf <- bam_read(bam, what = c("rname", "pos", "cigar", "strand"),
+                  as = "GAlignments", threads = 2,
+                  param = Rsamtools::ScanBamParam(flag = FLAG, mapqFilter = 10))
+  expect_identical(gaf, reff)
+})
+
+test_that("GA fast path and slow path produce identical objects", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  fields <- c("rname", "pos", "cigar", "strand", "flag", "mapq")
+  fast <- bam_read(bam, what = fields, as = "GAlignments", threads = 2)
+  old <- options(BamScale.ga_fastpath = FALSE)
+  on.exit(options(old), add = TRUE)
+  slow <- bam_read(bam, what = fields, as = "GAlignments", threads = 2)
+  expect_identical(fast, slow)
+})
+
+test_that("GA fast path survives gctorture (CHARSXP cache GC safety)", {
+  bam <- ompBAM::example_BAM("Unsorted")
+  gctorture(TRUE)
+  ga <- tryCatch(
+    bam_read(bam, what = c("rname", "pos", "cigar", "strand"),
+             as = "GAlignments", threads = 1),
+    finally = gctorture(FALSE)
+  )
+  expect_s4_class(ga, "GAlignments")
+  expect_true(length(ga) > 0)
+})
+
 test_that("GAlignments output is available when package is installed", {
   bam <- ompBAM::example_BAM("Unsorted")
   g <- bam_read(
