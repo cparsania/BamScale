@@ -70,6 +70,15 @@
 
 ### Bug fixes
 
+- [`bam_coverage_bigwig()`](https://cparsania.github.io/BamScale/reference/bam_coverage_bigwig.md)
+  now works on Windows: the output stream is opened in binary mode
+  (`"w+b"`; text mode corrupted the bigWig), and zoom levels are always
+  built from the in-memory coverage runs instead of re-reading the
+  just-written stream (Windows’ C runtime is strict about write-to-read
+  transitions on update streams; the in-memory path is byte-identical to
+  the re-read path, verified at 226M-read scale). Vendored libBigWig
+  diagnostics now go through `REprintf()`, clearing the compiled-code
+  check NOTE.
 - Removed a long-standing `^src/Makevars$` entry from `.Rbuildignore`
   (dating to the pkgdown setup): built tarballs – including the
   Bioconductor builds – shipped without `src/Makevars` and therefore

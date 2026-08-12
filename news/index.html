@@ -64,7 +64,9 @@
 </ul></div>
 <div class="section level3">
 <h3 id="bug-fixes-0-99-14">Bug fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-99-14"></a></h3>
-<ul><li>Removed a long-standing <code>^src/Makevars$</code> entry from <code>.Rbuildignore</code> (dating to the pkgdown setup): built tarballs – including the Bioconductor builds – shipped without <code>src/Makevars</code> and therefore compiled WITHOUT OpenMP (and without the explicit <code>-lz</code>), silently running single-threaded when installed from a tarball. In-place <code>R CMD INSTALL .</code> was unaffected, which is why local installs always threaded. Tarball builds now carry the full build configuration (OpenMP, zlib, <code>-DNOCURL</code>, and the bundled libBigWig objects).</li>
+<ul><li>
+<code><a href="../reference/bam_coverage_bigwig.html">bam_coverage_bigwig()</a></code> now works on Windows: the output stream is opened in binary mode (<code>"w+b"</code>; text mode corrupted the bigWig), and zoom levels are always built from the in-memory coverage runs instead of re-reading the just-written stream (Windows’ C runtime is strict about write-to-read transitions on update streams; the in-memory path is byte-identical to the re-read path, verified at 226M-read scale). Vendored libBigWig diagnostics now go through <code>REprintf()</code>, clearing the compiled-code check NOTE.</li>
+<li>Removed a long-standing <code>^src/Makevars$</code> entry from <code>.Rbuildignore</code> (dating to the pkgdown setup): built tarballs – including the Bioconductor builds – shipped without <code>src/Makevars</code> and therefore compiled WITHOUT OpenMP (and without the explicit <code>-lz</code>), silently running single-threaded when installed from a tarball. In-place <code>R CMD INSTALL .</code> was unaffected, which is why local installs always threaded. Tarball builds now carry the full build configuration (OpenMP, zlib, <code>-DNOCURL</code>, and the bundled libBigWig objects).</li>
 </ul></div>
 <div class="section level3">
 <h3 id="benchmarks-0-99-14">Benchmarks<a class="anchor" aria-label="anchor" href="#benchmarks-0-99-14"></a></h3>
