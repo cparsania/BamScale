@@ -327,11 +327,11 @@ sessionInfo()
 #> [1] stats     graphics  grDevices utils     datasets  methods   base     
 #> 
 #> other attached packages:
-#> [1] BamScale_0.99.13 BiocStyle_2.40.0
+#> [1] BamScale_0.99.14 BiocStyle_2.40.0
 #> 
 #> loaded via a namespace (and not attached):
 #>  [1] sass_0.4.10                 generics_0.1.4             
-#>  [3] bitops_1.0-9                SparseArray_1.12.2         
+#>  [3] bitops_1.1-0                SparseArray_1.12.2         
 #>  [5] lattice_0.22-9              digest_0.6.39              
 #>  [7] evaluate_1.0.5              grid_4.6.1                 
 #>  [9] bookdown_0.47               fastmap_1.2.0              
@@ -355,7 +355,7 @@ sessionInfo()
 #> [45] S4Vectors_0.50.1            fs_2.1.0                   
 #> [47] IRanges_2.46.0              ragg_1.5.2                 
 #> [49] desc_1.4.3                  pkgdown_2.2.1              
-#> [51] bslib_0.11.0                Rcpp_1.1.2                 
+#> [51] bslib_0.12.0                Rcpp_1.1.2                 
 #> [53] systemfonts_1.3.2           xfun_0.60                  
 #> [55] GenomicAlignments_1.48.0    GenomicRanges_1.64.0       
 #> [57] MatrixGenerics_1.24.0       knitr_1.51                 

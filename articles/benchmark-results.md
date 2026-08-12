@@ -26,30 +26,32 @@ results.
 
 ## Read throughput on a single large BAM
 
-On a single large BAM, BamScale reads **2.3–3.2x faster** than the
+On a single large BAM, BamScale reads **2.5–4x faster** than the
 standard reader across three representative access patterns, because it
-spreads the BGZF decode across cores:
+spreads the BGZF decode across cores and assembles the output objects in
+native code:
 
 | Workload | Reads | Standard (s) | BamScale (s) | Threads | Speedup |
 |:---|:---|---:|---:|---:|:---|
-| Core fields | qname/flag/rname/pos/mapq/cigar | 15.6 | 6.8 | 48 | 2.29x |
-| GAlignments | -\> GAlignments object | 10.9 | 3.4 | 48 | 3.22x |
-| Sequence + quality | seq + base quality | 22.3 | 8.1 | 24 | 2.76x |
+| Core fields | qname/flag/rname/pos/mapq/cigar | 15.4 | 6.3 | 48 | 2.45x |
+| GAlignments | -\> GAlignments object | 10.6 | 2.6 | 48 | 4.03x |
+| Sequence + quality | seq + base quality | 21.6 | 7.0 | 48 | 3.09x |
 
 Single-file read throughput: best BamScale configuration vs the
 single-threaded standard reader (median of 5 iterations). {.table}
 
 ![](benchmark-results_files/figure-html/read-plot-1.png)
 
-Two honest points. At **one thread** BamScale is at or near the
-single-threaded readers (the win comes from threading, not a faster
-single-core path), and the scaling is **strongly sublinear** – roughly
-2–3x on 48 threads, saturating by about 24 threads. The value is not
-near-linear scaling but the ability to use cores that a single-threaded
-reader cannot use at all – as on one large BAM in an interactive
-session. Object-free command-line decoders such as `samtools` reach
-several-fold higher *raw* throughput, but return no Bioconductor object;
-BamScale’s role is fast, object-faithful decoding *inside* R.
+Two honest points. At **one thread** BamScale is modestly faster than
+the single-threaded readers (about 1.1–1.3x, from native-code object
+assembly); most of the win comes from threading, and the scaling is
+**strongly sublinear** – roughly 2.5–4x on 48 threads, largely
+saturating between 24 and 48 threads. The value is not near-linear
+scaling but the ability to use cores that a single-threaded reader
+cannot use at all – as on one large BAM in an interactive session.
+Object-free command-line decoders such as `samtools` reach several-fold
+higher *raw* throughput, but return no Bioconductor object; BamScale’s
+role is fast, object-faithful decoding *inside* R.
 
 ## End-to-end impact tracks the read fraction
 
@@ -59,12 +61,12 @@ law):
 
 | Endpoint                  | Layer    | Read fraction | Speedup |
 |:--------------------------|:---------|:--------------|:--------|
-| ATAC fragment-size QC     | workflow | 93%           | 3.66x   |
-| GAlignments (read)        | read     | 100%          | 3.22x   |
-| Sequence + quality (read) | read     | 100%          | 2.76x   |
-| Coverage -\> RleList      | workflow | 76%           | 2.50x   |
-| Core fields (read)        | read     | 100%          | 2.29x   |
-| Coverage -\> bigWig       | workflow | 21%           | 1.23x   |
+| ATAC fragment-size QC     | workflow | 92%           | 4.14x   |
+| GAlignments (read)        | read     | 100%          | 4.03x   |
+| Coverage -\> RleList      | workflow | 76%           | 3.29x   |
+| Sequence + quality (read) | read     | 100%          | 3.09x   |
+| Core fields (read)        | read     | 100%          | 2.45x   |
+| Coverage -\> bigWig       | workflow | 22%           | 1.24x   |
 
 End-to-end speedup by workload endpoint. Read-pattern rows are
 single-file read throughput; workflow rows are end-to-end. Read fraction
@@ -73,22 +75,49 @@ is the share of the standard pipeline spent reading. {.table}
 ![](benchmark-results_files/figure-html/spectrum-plot-1.png)
 
 - **ATAC fragment-size QC** is nearly pure read, so BamScale’s read
-  speedup carries through almost intact: **3.66x** end-to-end.
+  speedup carries through almost intact: **4.14x** end-to-end.
 - **Coverage -\> bigWig** is dominated by the shared, single-threaded
-  bigWig writer (identical work on both arms), so the end-to-end gain is
-  bounded at **1.23x** even though the read phase itself is much faster.
-  Stopping at the in-memory coverage `RleList` – what many analyses
-  consume next – recovers a **2.50x** gain.
+  `rtracklayer::export.bw` step (identical work on both arms), so the
+  end-to-end gain is bounded at **1.24x** even though the read phase
+  itself is 6.6x faster. Stopping at the in-memory coverage `RleList` –
+  what many analyses consume next – recovers a **3.29x** gain. (Since
+  0.99.14,
+  [`bam_coverage()`](https://cparsania.github.io/BamScale/reference/bam_coverage.md)
+  and
+  [`bam_coverage_bigwig()`](https://cparsania.github.io/BamScale/reference/bam_coverage_bigwig.md)
+  compute these endpoints directly inside the reader, removing the
+  R-side read phase entirely; see the function documentation.)
 
 ## A note on cores and fairness
 
 A multithreaded reader can occupy cores a single-threaded one cannot. At
 **matched core counts** (both arms given the same number of cores) the
 two readers are approximately at parity for multi-file processing
-(coverage ~1.10x, ATAC ~0.96x): the single-threaded reader already
+(coverage ~1.13x, ATAC ~0.99x): the single-threaded reader already
 saturates a machine by parallelising *across* files, so BamScale’s
 multi-file advantage comes specifically from also threading *within* a
 file – which pays off when there are fewer files than cores.
+
+## Beyond reading: in-reader aggregation (new in 0.99.14)
+
+For workflows whose endpoint is a summary rather than the alignments
+themselves, BamScale 0.99.14 adds four functions that fold the
+computation inside the multithreaded reader, so no per-read R objects
+are ever materialised:
+[`fragment_sizes()`](https://cparsania.github.io/BamScale/reference/fragment_sizes.md)
+(paired-end fragment-size distribution),
+[`mapq_dist()`](https://cparsania.github.io/BamScale/reference/mapq_dist.md)
+(mapping-quality distribution),
+[`bam_coverage()`](https://cparsania.github.io/BamScale/reference/bam_coverage.md)
+(per-base coverage `RleList`), and
+[`bam_coverage_bigwig()`](https://cparsania.github.io/BamScale/reference/bam_coverage_bigwig.md)
+(single-pass BAM to bigWig with parallel block compression). Each is
+verified byte-identical to its standard equivalent
+(`table(abs(scanBam(isize)))`, `table(scanBam(mapq))`,
+`coverage(readGAlignments())`, and the serial bigWig writer
+respectively) – see their reference pages. These remove the read phase
+from the Amdahl decomposition above entirely; comprehensive benchmarks
+on public ENCODE data accompany the manuscript.
 
 ## Output is identical to the standard tools
 
@@ -201,14 +230,14 @@ correctness metadata, from which the summary figures above are derived.
     ## [1] stats     graphics  grDevices utils     datasets  methods   base     
     ## 
     ## other attached packages:
-    ## [1] BamScale_0.99.13 ggplot2_4.0.3    BiocStyle_2.40.0
+    ## [1] BamScale_0.99.14 ggplot2_4.0.3    BiocStyle_2.40.0
     ## 
     ## loaded via a namespace (and not attached):
     ##  [1] SummarizedExperiment_1.42.0 gtable_0.3.6               
-    ##  [3] xfun_0.60                   bslib_0.11.0               
+    ##  [3] xfun_0.60                   bslib_0.12.0               
     ##  [5] Biobase_2.72.0              lattice_0.22-9             
     ##  [7] vctrs_0.7.3                 tools_4.6.1                
-    ##  [9] bitops_1.0-9                generics_0.1.4             
+    ##  [9] bitops_1.1-0                generics_0.1.4             
     ## [11] stats4_4.6.1                parallel_4.6.1             
     ## [13] tibble_3.3.1                pkgconfig_2.0.3            
     ## [15] Matrix_1.7-5                RColorBrewer_1.1-3         

@@ -28,7 +28,7 @@
 
     <a class="navbar-brand me-2" href="index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.13</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.14</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -70,14 +70,17 @@
 <blockquote>
 <p>Bioconductor-friendly multithreaded BAM processing</p>
 </blockquote>
-<p><a href="https://bioconductor.org/packages/3.24/bioc/html/BamScale.html" class="external-link"><img src="https://bioconductor.org/shields/availability/devel/BamScale.svg" alt="Bioconductor"></a> <a href="https://bioconductor.org/packages/3.24/bioc/html/BamScale.html" class="external-link"><img src="https://bioconductor.org/shields/build/devel/bioc/BamScale.svg" alt="Bioc build"></a> <a href="https://bioconductor.org/packages/stats/bioc/BamScale/" class="external-link"><img src="https://bioconductor.org/shields/downloads/devel/BamScale.svg" alt="Bioc downloads"></a> <a href="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml" class="external-link"><img src="https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg" alt="pkgdown"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></p>
+<!-- versions -->
+<p><a href="https://github.com/cparsania/BamScale" class="external-link"><img src="https://img.shields.io/github/r-package/v/cparsania/BamScale?label=GitHub&amp;logo=github&amp;color=blue" alt="GitHub version"></a> <a href="https://bioconductor.org/packages/3.24/bioc/html/BamScale.html" class="external-link"><img src="https://bioc.r-universe.dev/badges/BamScale?label=Bioc%20devel" alt="Bioc devel version"></a> <a href="https://bioconductor.org/packages/3.24/bioc/html/BamScale.html" class="external-link"><img src="https://img.shields.io/badge/Bioc%20release-upcoming%20(3.24)-orange" alt="Bioc release"></a> <!-- checks --> <a href="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/cparsania/BamScale/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="https://bioconductor.org/checkResults/devel/bioc-LATEST/BamScale/" class="external-link"><img src="https://bioconductor.org/shields/build/devel/bioc/BamScale.svg" alt="Bioc build"></a> <a href="https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml" class="external-link"><img src="https://github.com/cparsania/BamScale/actions/workflows/pkgdown.yaml/badge.svg" alt="pkgdown"></a> <!-- status --> <a href="https://bioconductor.org/packages/3.24/bioc/html/BamScale.html" class="external-link"><img src="https://bioconductor.org/shields/availability/devel/BamScale.svg" alt="Bioconductor availability"></a> <a href="https://bioconductor.org/packages/stats/bioc/BamScale/" class="external-link"><img src="https://bioconductor.org/shields/downloads/devel/BamScale.svg" alt="Bioc downloads"></a> <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></p>
 <p><strong>BamScale</strong> is a multithreaded BAM reader for R, built on the <a href="https://bioconductor.org/packages/ompBAM" class="external-link"><code>ompBAM</code></a> OpenMP engine. It returns the <em>exact</em> Bioconductor objects you already use — verified <strong>byte-identical</strong> to <code>Rsamtools</code> and <code>GenomicAlignments</code> — but decodes each file across many cores, taking the read step off the critical path in alignment-centric workflows.</p>
 <ul>
 <li>
-<strong>2.3–3.2× faster</strong> single-file reads than <code>scanBam</code> / <code>readGAlignments</code>
+<strong>2.5–4× faster</strong> single-file reads than <code>scanBam</code> / <code>readGAlignments</code>
 </li>
 <li>
 <strong>Drop-in</strong>: same objects, same <code>ScanBamParam</code> filtering, same <code>BiocParallel</code> model</li>
+<li>
+<strong>In-reader aggregation</strong> (0.99.14): <code><a href="reference/fragment_sizes.html">fragment_sizes()</a></code>, <code><a href="reference/mapq_dist.html">mapq_dist()</a></code>, <code><a href="reference/bam_coverage.html">bam_coverage()</a></code>, and single-pass <code><a href="reference/bam_coverage_bigwig.html">bam_coverage_bigwig()</a></code> fold the computation inside the reader — byte-identical results without materialising per-read objects</li>
 <li>
 <strong>Two parallel axes</strong>: OpenMP <code>threads</code> <em>within</em> a file, <code>BiocParallel</code> <em>across</em> files</li>
 <li>
@@ -109,27 +112,27 @@
 <tr>
 <td>Core alignment fields</td>
 <td><code><a href="https://rdrr.io/pkg/Rsamtools/man/scanBam.html" class="external-link">Rsamtools::scanBam</a></code></td>
-<td align="right">15.6 s</td>
-<td align="right">6.8 s</td>
+<td align="right">15.4 s</td>
+<td align="right">6.3 s</td>
 <td align="center">48</td>
-<td align="center"><strong>2.3×</strong></td>
+<td align="center"><strong>2.5×</strong></td>
 </tr>
 <tr>
 <td>
 <code>GAlignments</code> object</td>
 <td><code><a href="https://rdrr.io/pkg/GenomicAlignments/man/readGAlignments.html" class="external-link">GenomicAlignments::readGAlignments</a></code></td>
-<td align="right">10.9 s</td>
-<td align="right">3.4 s</td>
+<td align="right">10.6 s</td>
+<td align="right">2.6 s</td>
 <td align="center">48</td>
-<td align="center"><strong>3.2×</strong></td>
+<td align="center"><strong>4.0×</strong></td>
 </tr>
 <tr>
 <td>Sequence + base quality</td>
 <td><code><a href="https://rdrr.io/pkg/Rsamtools/man/scanBam.html" class="external-link">Rsamtools::scanBam</a></code></td>
-<td align="right">22.3 s</td>
-<td align="right">8.1 s</td>
-<td align="center">24</td>
-<td align="center"><strong>2.8×</strong></td>
+<td align="right">21.6 s</td>
+<td align="right">7.0 s</td>
+<td align="center">48</td>
+<td align="center"><strong>3.1×</strong></td>
 </tr>
 </tbody>
 </table>
@@ -143,18 +146,18 @@
 <tbody>
 <tr>
 <td>ATAC fragment-size QC</td>
-<td align="center">93%</td>
-<td align="center"><strong>3.7×</strong></td>
+<td align="center">92%</td>
+<td align="center"><strong>4.1×</strong></td>
 </tr>
 <tr>
 <td>Coverage → <code>RleList</code>
 </td>
 <td align="center">76%</td>
-<td align="center"><strong>2.5×</strong></td>
+<td align="center"><strong>3.3×</strong></td>
 </tr>
 <tr>
 <td>Coverage → bigWig</td>
-<td align="center">21%</td>
+<td align="center">22%</td>
 <td align="center"><strong>1.2×</strong></td>
 </tr>
 </tbody>
@@ -209,7 +212,14 @@
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Fast chromosome-level counts</span></span>
-<span><span class="va">cnt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_count.html">bam_count</a></span><span class="op">(</span><span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">cnt</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_count.html">bam_count</a></span><span class="op">(</span><span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># In-reader aggregation (0.99.14): summaries computed inside the C++ reader,</span></span>
+<span><span class="co"># byte-identical to the scanBam/coverage equivalents</span></span>
+<span><span class="va">fs</span>  <span class="op">&lt;-</span> <span class="fu"><a href="reference/fragment_sizes.html">fragment_sizes</a></span><span class="op">(</span><span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>   <span class="co"># paired-end fragment-size distribution</span></span>
+<span><span class="va">mq</span>  <span class="op">&lt;-</span> <span class="fu"><a href="reference/mapq_dist.html">mapq_dist</a></span><span class="op">(</span><span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>        <span class="co"># mapping-quality distribution</span></span>
+<span><span class="va">cov</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bam_coverage.html">bam_coverage</a></span><span class="op">(</span><span class="va">bam</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>     <span class="co"># per-base coverage RleList</span></span>
+<span><span class="fu"><a href="reference/bam_coverage_bigwig.html">bam_coverage_bigwig</a></span><span class="op">(</span><span class="va">bam</span>, <span class="st">"coverage.bw"</span>, threads <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>  <span class="co"># single-pass BAM -&gt; bigWig</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="output-modes--compatibility">Output modes &amp; compatibility<a class="anchor" aria-label="anchor" href="#output-modes--compatibility"></a>

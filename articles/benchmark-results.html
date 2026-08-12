@@ -25,7 +25,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">BamScale</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.13</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.99.14</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -97,9 +97,10 @@ reproduce the full results.</p>
 <div class="section level2">
 <h2 id="read-throughput-on-a-single-large-bam">Read throughput on a single large BAM<a class="anchor" aria-label="anchor" href="#read-throughput-on-a-single-large-bam"></a>
 </h2>
-<p>On a single large BAM, BamScale reads <strong>2.3–3.2x
-faster</strong> than the standard reader across three representative
-access patterns, because it spreads the BGZF decode across cores:</p>
+<p>On a single large BAM, BamScale reads <strong>2.5–4x faster</strong>
+than the standard reader across three representative access patterns,
+because it spreads the BGZF decode across cores and assembles the output
+objects in native code:</p>
 <table class="table">
 <caption>Single-file read throughput: best BamScale configuration vs the
 single-threaded standard reader (median of 5 iterations).</caption>
@@ -123,37 +124,38 @@ single-threaded standard reader (median of 5 iterations).</caption>
 <tr class="odd">
 <td align="left">Core fields</td>
 <td align="left">qname/flag/rname/pos/mapq/cigar</td>
-<td align="right">15.6</td>
-<td align="right">6.8</td>
+<td align="right">15.4</td>
+<td align="right">6.3</td>
 <td align="right">48</td>
-<td align="left">2.29x</td>
+<td align="left">2.45x</td>
 </tr>
 <tr class="even">
 <td align="left">GAlignments</td>
 <td align="left">-&gt; GAlignments object</td>
-<td align="right">10.9</td>
-<td align="right">3.4</td>
+<td align="right">10.6</td>
+<td align="right">2.6</td>
 <td align="right">48</td>
-<td align="left">3.22x</td>
+<td align="left">4.03x</td>
 </tr>
 <tr class="odd">
 <td align="left">Sequence + quality</td>
 <td align="left">seq + base quality</td>
-<td align="right">22.3</td>
-<td align="right">8.1</td>
-<td align="right">24</td>
-<td align="left">2.76x</td>
+<td align="right">21.6</td>
+<td align="right">7.0</td>
+<td align="right">48</td>
+<td align="left">3.09x</td>
 </tr>
 </tbody>
 </table>
 <p><img src="benchmark-results_files/figure-html/read-plot-1.png" class="r-plt" alt="" width="840"></p>
-<p>Two honest points. At <strong>one thread</strong> BamScale is at or
-near the single-threaded readers (the win comes from threading, not a
-faster single-core path), and the scaling is <strong>strongly
-sublinear</strong> – roughly 2–3x on 48 threads, saturating by about 24
-threads. The value is not near-linear scaling but the ability to use
-cores that a single-threaded reader cannot use at all – as on one large
-BAM in an interactive session. Object-free command-line decoders such as
+<p>Two honest points. At <strong>one thread</strong> BamScale is
+modestly faster than the single-threaded readers (about 1.1–1.3x, from
+native-code object assembly); most of the win comes from threading, and
+the scaling is <strong>strongly sublinear</strong> – roughly 2.5–4x on
+48 threads, largely saturating between 24 and 48 threads. The value is
+not near-linear scaling but the ability to use cores that a
+single-threaded reader cannot use at all – as on one large BAM in an
+interactive session. Object-free command-line decoders such as
 <code>samtools</code> reach several-fold higher <em>raw</em> throughput,
 but return no Bioconductor object; BamScale’s role is fast,
 object-faithful decoding <em>inside</em> R.</p>
@@ -178,38 +180,38 @@ is the share of the standard pipeline spent reading.</caption>
 <tr class="odd">
 <td align="left">ATAC fragment-size QC</td>
 <td align="left">workflow</td>
-<td align="left">93%</td>
-<td align="left">3.66x</td>
+<td align="left">92%</td>
+<td align="left">4.14x</td>
 </tr>
 <tr class="even">
 <td align="left">GAlignments (read)</td>
 <td align="left">read</td>
 <td align="left">100%</td>
-<td align="left">3.22x</td>
+<td align="left">4.03x</td>
 </tr>
 <tr class="odd">
-<td align="left">Sequence + quality (read)</td>
-<td align="left">read</td>
-<td align="left">100%</td>
-<td align="left">2.76x</td>
-</tr>
-<tr class="even">
 <td align="left">Coverage -&gt; RleList</td>
 <td align="left">workflow</td>
 <td align="left">76%</td>
-<td align="left">2.50x</td>
+<td align="left">3.29x</td>
+</tr>
+<tr class="even">
+<td align="left">Sequence + quality (read)</td>
+<td align="left">read</td>
+<td align="left">100%</td>
+<td align="left">3.09x</td>
 </tr>
 <tr class="odd">
 <td align="left">Core fields (read)</td>
 <td align="left">read</td>
 <td align="left">100%</td>
-<td align="left">2.29x</td>
+<td align="left">2.45x</td>
 </tr>
 <tr class="even">
 <td align="left">Coverage -&gt; bigWig</td>
 <td align="left">workflow</td>
-<td align="left">21%</td>
-<td align="left">1.23x</td>
+<td align="left">22%</td>
+<td align="left">1.24x</td>
 </tr>
 </tbody>
 </table>
@@ -218,14 +220,18 @@ is the share of the standard pipeline spent reading.</caption>
 <li>
 <strong>ATAC fragment-size QC</strong> is nearly pure read, so
 BamScale’s read speedup carries through almost intact:
-<strong>3.66x</strong> end-to-end.</li>
+<strong>4.14x</strong> end-to-end.</li>
 <li>
 <strong>Coverage -&gt; bigWig</strong> is dominated by the shared,
-single-threaded bigWig writer (identical work on both arms), so the
-end-to-end gain is bounded at <strong>1.23x</strong> even though the
-read phase itself is much faster. Stopping at the in-memory coverage
-<code>RleList</code> – what many analyses consume next – recovers a
-<strong>2.50x</strong> gain.</li>
+single-threaded <code>rtracklayer::export.bw</code> step (identical work
+on both arms), so the end-to-end gain is bounded at
+<strong>1.24x</strong> even though the read phase itself is 6.6x faster.
+Stopping at the in-memory coverage <code>RleList</code> – what many
+analyses consume next – recovers a <strong>3.29x</strong> gain. (Since
+0.99.14, <code><a href="../reference/bam_coverage.html">bam_coverage()</a></code> and
+<code><a href="../reference/bam_coverage_bigwig.html">bam_coverage_bigwig()</a></code> compute these endpoints directly
+inside the reader, removing the R-side read phase entirely; see the
+function documentation.)</li>
 </ul>
 </div>
 <div class="section level2">
@@ -234,11 +240,30 @@ read phase itself is much faster. Stopping at the in-memory coverage
 <p>A multithreaded reader can occupy cores a single-threaded one cannot.
 At <strong>matched core counts</strong> (both arms given the same number
 of cores) the two readers are approximately at parity for multi-file
-processing (coverage ~1.10x, ATAC ~0.96x): the single-threaded reader
+processing (coverage ~1.13x, ATAC ~0.99x): the single-threaded reader
 already saturates a machine by parallelising <em>across</em> files, so
 BamScale’s multi-file advantage comes specifically from also threading
 <em>within</em> a file – which pays off when there are fewer files than
 cores.</p>
+</div>
+<div class="section level2">
+<h2 id="beyond-reading-in-reader-aggregation-new-in-0-99-14">Beyond reading: in-reader aggregation (new in 0.99.14)<a class="anchor" aria-label="anchor" href="#beyond-reading-in-reader-aggregation-new-in-0-99-14"></a>
+</h2>
+<p>For workflows whose endpoint is a summary rather than the alignments
+themselves, BamScale 0.99.14 adds four functions that fold the
+computation inside the multithreaded reader, so no per-read R objects
+are ever materialised: <code><a href="../reference/fragment_sizes.html">fragment_sizes()</a></code> (paired-end
+fragment-size distribution), <code><a href="../reference/mapq_dist.html">mapq_dist()</a></code> (mapping-quality
+distribution), <code><a href="../reference/bam_coverage.html">bam_coverage()</a></code> (per-base coverage
+<code>RleList</code>), and <code><a href="../reference/bam_coverage_bigwig.html">bam_coverage_bigwig()</a></code>
+(single-pass BAM to bigWig with parallel block compression). Each is
+verified byte-identical to its standard equivalent
+(<code>table(abs(scanBam(isize)))</code>,
+<code>table(scanBam(mapq))</code>,
+<code>coverage(readGAlignments())</code>, and the serial bigWig writer
+respectively) – see their reference pages. These remove the read phase
+from the Amdahl decomposition above entirely; comprehensive benchmarks
+on public ENCODE data accompany the manuscript.</p>
 </div>
 <div class="section level2">
 <h2 id="output-is-identical-to-the-standard-tools">Output is identical to the standard tools<a class="anchor" aria-label="anchor" href="#output-is-identical-to-the-standard-tools"></a>
@@ -344,14 +369,14 @@ are derived.</p>
 <span><span class="co">## [1] stats     graphics  grDevices utils     datasets  methods   base     </span></span>
 <span><span class="co">## </span></span>
 <span><span class="co">## other attached packages:</span></span>
-<span><span class="co">## [1] BamScale_0.99.13 ggplot2_4.0.3    BiocStyle_2.40.0</span></span>
+<span><span class="co">## [1] BamScale_0.99.14 ggplot2_4.0.3    BiocStyle_2.40.0</span></span>
 <span><span class="co">## </span></span>
 <span><span class="co">## loaded via a namespace (and not attached):</span></span>
 <span><span class="co">##  [1] SummarizedExperiment_1.42.0 gtable_0.3.6               </span></span>
-<span><span class="co">##  [3] xfun_0.60                   bslib_0.11.0               </span></span>
+<span><span class="co">##  [3] xfun_0.60                   bslib_0.12.0               </span></span>
 <span><span class="co">##  [5] Biobase_2.72.0              lattice_0.22-9             </span></span>
 <span><span class="co">##  [7] vctrs_0.7.3                 tools_4.6.1                </span></span>
-<span><span class="co">##  [9] bitops_1.0-9                generics_0.1.4             </span></span>
+<span><span class="co">##  [9] bitops_1.1-0                generics_0.1.4             </span></span>
 <span><span class="co">## [11] stats4_4.6.1                parallel_4.6.1             </span></span>
 <span><span class="co">## [13] tibble_3.3.1                pkgconfig_2.0.3            </span></span>
 <span><span class="co">## [15] Matrix_1.7-5                RColorBrewer_1.1-3         </span></span>

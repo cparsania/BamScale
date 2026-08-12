@@ -5,6 +5,12 @@
 - [`bam_count()`](https://cparsania.github.io/BamScale/reference/bam_count.md)
   : Count BAM records with Bioconductor-compatible filtering
 
+- [`bam_coverage()`](https://cparsania.github.io/BamScale/reference/bam_coverage.md)
+  : Per-base coverage, aggregated in C++
+
+- [`bam_coverage_bigwig()`](https://cparsania.github.io/BamScale/reference/bam_coverage_bigwig.md)
+  : Write per-base coverage to a bigWig, computed in C++
+
 - [`bam_read()`](https://cparsania.github.io/BamScale/reference/bam_read.md)
   : Fast BAM reading with Bioconductor-compatible arguments
 
@@ -18,3 +24,9 @@
   :
 
   Decode compact `seq` and `qual` columns in BamScale output
+
+- [`fragment_sizes()`](https://cparsania.github.io/BamScale/reference/fragment_sizes.md)
+  : Fragment-size distribution, aggregated in C++
+
+- [`mapq_dist()`](https://cparsania.github.io/BamScale/reference/mapq_dist.md)
+  : Mapping-quality (MAPQ) distribution, aggregated in C++
