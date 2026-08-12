@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <R_ext/Print.h>   /* BamScale: REprintf (io.c does not include bigWig.h) */
 #include "bigWigIO.h"
 #include <inttypes.h>
 #include <errno.h>
