@@ -223,7 +223,7 @@ BamScale’s read speedup carries through almost intact:
 <strong>4.14x</strong> end-to-end.</li>
 <li>
 <strong>Coverage -&gt; bigWig</strong> is dominated by the shared,
-single-threaded <code>rtracklayer::export.bw</code> step (identical work
+single-threaded <code><a href="https://rdrr.io/pkg/rtracklayer/man/BigWigFile.html" class="external-link">rtracklayer::export.bw</a></code> step (identical work
 on both arms), so the end-to-end gain is bounded at
 <strong>1.24x</strong> even though the read phase itself is 6.6x faster.
 Stopping at the in-memory coverage <code>RleList</code> – what many

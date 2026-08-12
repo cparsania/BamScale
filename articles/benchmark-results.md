@@ -77,11 +77,11 @@ is the share of the standard pipeline spent reading. {.table}
 - **ATAC fragment-size QC** is nearly pure read, so BamScale’s read
   speedup carries through almost intact: **4.14x** end-to-end.
 - **Coverage -\> bigWig** is dominated by the shared, single-threaded
-  `rtracklayer::export.bw` step (identical work on both arms), so the
-  end-to-end gain is bounded at **1.24x** even though the read phase
-  itself is 6.6x faster. Stopping at the in-memory coverage `RleList` –
-  what many analyses consume next – recovers a **3.29x** gain. (Since
-  0.99.14,
+  [`rtracklayer::export.bw`](https://rdrr.io/pkg/rtracklayer/man/BigWigFile.html)
+  step (identical work on both arms), so the end-to-end gain is bounded
+  at **1.24x** even though the read phase itself is 6.6x faster.
+  Stopping at the in-memory coverage `RleList` – what many analyses
+  consume next – recovers a **3.29x** gain. (Since 0.99.14,
   [`bam_coverage()`](https://cparsania.github.io/BamScale/reference/bam_coverage.md)
   and
   [`bam_coverage_bigwig()`](https://cparsania.github.io/BamScale/reference/bam_coverage_bigwig.md)

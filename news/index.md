@@ -25,7 +25,8 @@
     unmapped reads dropped).
   - [`bam_coverage_bigwig()`](https://cparsania.github.io/BamScale/reference/bam_coverage_bigwig.md):
     single-pass BAM -\> coverage bigWig written natively via the bundled
-    libBigWig – no R-side coverage object, no `rtracklayer::export.bw`
+    libBigWig – no R-side coverage object, no
+    [`rtracklayer::export.bw`](https://rdrr.io/pkg/rtracklayer/man/BigWigFile.html)
     round-trip. Data and zoom blocks are compressed across the OpenMP
     threads (`parallel = TRUE`, default); the parallel output is
     bit-for-bit identical to the serial writer. A `compress_level`
