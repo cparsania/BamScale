@@ -368,6 +368,11 @@ test_that("bam_coverage returns a named list for multiple files", {
 })
 
 test_that("bam_coverage_bigwig writes a bigWig with values identical to coverage()", {
+  # rtracklayer's bigWig import goes through the UCSC udc layer, which cannot
+  # parse Windows paths ("Unrecognized protocol C") -- bigWig I/O via
+  # rtracklayer is unsupported on Windows. The parallel-vs-serial byte-identity
+  # test below still runs there.
+  skip_on_os("windows")
   skip_if_not_installed("rtracklayer")
   skip_if_not_installed("GenomicAlignments")
   bam <- ompBAM::example_BAM("Unsorted")

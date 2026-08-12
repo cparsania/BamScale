@@ -2352,7 +2352,10 @@ std::string bam_coverage_bigwig_cpp(
   if (bwInit(1 << 17) != 0) {
     stop("libBigWig: bwInit failed");
   }
-  bigWigFile_t* fp = bwOpen(const_cast<char*>(out_file.c_str()), NULL, "w");
+  // "w+b": the finalize step re-reads the stream it wrote (zoom construction in
+  // the serial path), and Windows corrupts binary data in text mode -- so the
+  // stream must be read+write and explicitly binary.
+  bigWigFile_t* fp = bwOpen(const_cast<char*>(out_file.c_str()), NULL, "w+b");
   if (fp == NULL) {
     bwCleanup();
     stop("libBigWig: could not open '%s' for writing", out_file);
