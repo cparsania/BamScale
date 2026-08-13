@@ -20,7 +20,8 @@ dir.create(out, showWarnings = FALSE, recursive = TRUE)
 
 rd <- function(d, f) {
     p <- file.path(d, f)
-    if (file.exists(p)) read.csv(p, stringsAsFactors = FALSE) else NULL
+    if (!file.exists(p)) return(NULL)
+    tryCatch(read.csv(p, stringsAsFactors = FALSE), error = function(e) NULL)
 }
 rbind_fill <- function(lst) {
     lst <- Filter(Negate(is.null), lst)
