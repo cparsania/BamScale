@@ -4,7 +4,7 @@ PKG_CPPFLAGS = -DNOCURL
 PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS)
 # The vendored libBigWig writer uses OpenMP for parallel block compression.
 PKG_CFLAGS = $(SHLIB_OPENMP_CFLAGS)
-PKG_LIBS = -lz $(SHLIB_OPENMP_CFLAGS) $(SHLIB_OPENMP_CXXFLAGS)
+PKG_LIBS = -lz $(SHLIB_OPENMP_CXXFLAGS)
 
 # Explicit object list so the vendored libBigWig sources in src/libBigWig/ are
 # compiled and linked (R only auto-globs the top level of src/).
