@@ -19,11 +19,13 @@ jobs:
       fail-fast: false
       matrix:
         config:
+          # Bioconductor package: dependencies resolve from the Bioc repo paired
+          # with R release, so the CRAN-style oldrel-1/devel legs cannot install
+          # binary deps (hour-long source builds that never finish cleanly).
+          # Bioconductor's own devel builders cover the Bioc-devel combination.
           - {os: macos-latest,   r: 'release'}
           - {os: windows-latest, r: 'release'}
-          - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
-          - {os: ubuntu-latest,   r: 'release'}
-          - {os: ubuntu-latest,   r: 'oldrel-1'}
+          - {os: ubuntu-latest,  r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
