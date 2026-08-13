@@ -60,9 +60,7 @@ unsigned int clamp_threads(const int requested) {
 
 struct PackedStringColumn;
 
-inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases);
 inline void append_decoded_seq_encoded(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases);
-inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases);
 inline void append_encoded_qual_native(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases);
 
 template <typename T>
@@ -237,38 +235,6 @@ struct PackedStringColumn {
   }
 };
 
-inline void append_decoded_seq_ascii(PackedStringColumn& out, const uint8_t* packed_seq, const uint32_t n_bases) {
-  static const char nt16_map[16] = {
-    '=', 'A', 'C', 'M',
-    'G', 'R', 'S', 'V',
-    'T', 'W', 'Y', 'H',
-    'K', 'D', 'B', 'N'
-  };
-
-  const size_t offset = out.bytes.size();
-  const size_t len = static_cast<size_t>(n_bases);
-  out.offsets.push_back(offset);
-  out.lengths.push_back(len);
-
-  if (len == 0U || packed_seq == NULL) return;
-
-  out.bytes.resize(offset + len);
-  char* dst = out.bytes.data() + offset;
-
-  const uint32_t n_pairs = n_bases >> 1;
-  uint32_t j = 0U;
-  for (uint32_t i = 0; i < n_pairs; ++i) {
-    const uint8_t byte = packed_seq[i];
-    dst[j++] = nt16_map[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
-    dst[j++] = nt16_map[static_cast<uint8_t>(byte & 0x0FU)];
-  }
-
-  if ((n_bases & 1U) != 0U) {
-    const uint8_t byte = packed_seq[n_pairs];
-    dst[j] = nt16_map[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
-  }
-}
-
 // Fill `out` with DNAString *internal* encoding: BAM nt16 codes 1-15 map to
 // themselves and code 0 ('=') maps to 16, exactly matching the byte layout a
 // DNAStringSet's shared pool holds (verified against Rsamtools::scanBam). This
@@ -302,36 +268,6 @@ inline void append_decoded_seq_encoded(PackedStringColumn& out, const uint8_t* p
   if ((n_bases & 1U) != 0U) {
     const uint8_t byte = packed_seq[n_pairs];
     dst[j] = enc[static_cast<uint8_t>((byte >> 4) & 0x0FU)];
-  }
-}
-
-inline void append_encoded_qual_ascii(PackedStringColumn& out, const uint8_t* qual_ptr, const uint32_t n_bases) {
-  const size_t offset = out.bytes.size();
-  const size_t len = static_cast<size_t>(n_bases);
-
-  if (len == 0U || qual_ptr == NULL) {
-    out.offsets.push_back(offset);
-    out.lengths.push_back(0U);
-    return;
-  }
-
-  bool missing = true;
-  out.bytes.resize(offset + len);
-  char* dst = out.bytes.data() + offset;
-  for (uint32_t i = 0; i < n_bases; ++i) {
-    const uint8_t q = qual_ptr[i];
-    if (q != 255U) missing = false;
-    const uint8_t phred = (q == 255U) ? 0U : q;
-    dst[static_cast<size_t>(i)] = static_cast<char>(phred + 33U);
-  }
-
-  out.offsets.push_back(offset);
-  if (missing) {
-    out.lengths.push_back(1U);
-    out.bytes.resize(offset + 1U);
-    out.bytes[offset] = '*';
-  } else {
-    out.lengths.push_back(len);
   }
 }
 
